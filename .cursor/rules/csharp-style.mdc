@@ -1,0 +1,115 @@
+---
+description: Google C# Style Guide rules for C# source files
+globs: **/*.cs
+alwaysApply: false
+---
+
+# Google C# Style Guide
+
+Reference: https://google.github.io/styleguide/csharp-style.html
+
+## Naming
+
+| Identifier | Convention |
+|-----------|-----------|
+| Classes, methods, enums, public fields, public properties, namespaces | `PascalCase` |
+| Local variables, parameters | `camelCase` |
+| Private/protected/internal fields & properties | `_camelCase` |
+| Interfaces | `IMyInterface` (prefix with `I`) |
+| Filenames & directories | `PascalCase` |
+
+- Naming is unaffected by `const`, `static`, or `readonly` modifiers.
+- Acronyms are treated as words: `MyRpc` not `MyRPC`.
+- One primary class per file; filename matches the class name.
+
+## Class Member Ordering
+
+1. Nested classes, enums, delegates, events
+2. Static, const, and readonly fields
+3. Fields and properties
+4. Constructors and finalizers
+5. Methods
+
+Within each group order by: Public → Internal → Protected internal → Protected → Private.
+
+## Formatting
+
+- Indent with **2 spaces** (matching Google Java/C++ style).
+- Opening braces go on the **same line** — no Allman style.
+- Line continuations indented **4 spaces**.
+- Always use braces for `if`/`else`/`for`/`while`, even for single-line bodies.
+- No newline between closing brace and `else`.
+
+```csharp
+if (resultValue < 0) {
+  _results.NumNegativeResults++;
+} else if (resultValue > 0) {
+  _results.NumPositiveResults++;
+}
+```
+
+## `var` Keyword
+
+**Use `var` when:**
+- The type is obvious from context: `var apple = new Apple();`
+- For transient variables passed immediately to another method.
+
+**Avoid `var` when:**
+- Working with primitive types: `bool success = true;`
+- The type would aid readability: `var listOfItems = GetList();` — avoid this.
+
+## Constants and Fields
+
+- Make variables `const` whenever possible; fall back to `readonly`.
+- Prefer named constants over magic numbers.
+- Field initializers are encouraged.
+
+## Collections and Return Types
+
+- Inputs: use the most restrictive type (`IReadOnlyList<T>`, `IEnumerable<T>`).
+- Outputs transferring ownership: use `IList<T>`.
+- Prefer `List<T>` over arrays for flexible containers.
+- Avoid `Container.ForEach(...)` for multi-statement bodies.
+- Prefer LINQ member syntax: `myList.Where(x)` over SQL-style `from x in myList where`.
+
+## Properties and Expression Bodies
+
+- Single-line read-only properties: prefer `=>` expression bodies.
+- All other properties: use `{ get; set; }` syntax.
+- Do **not** use expression body syntax for multi-statement methods.
+
+## Structs vs Classes
+
+- Default to `class`. Only use `struct` for small, value-like types (e.g., Vector3).
+- Structs are passed by value — be aware of copy semantics.
+
+## Error Handling & Delegates
+
+- Invoke delegates with null-conditional: `SomeDelegate?.Invoke()`.
+- Use `out` for outputs that are not inputs; place `out` parameters last.
+- Use `ref` only when mutating an input is truly necessary.
+
+## String Handling
+
+- Prefer string interpolation for readability: `$"Hello, {name}"`.
+- Use `StringBuilder` for many concatenations in performance-sensitive code.
+- Avoid chained `operator+` in loops.
+
+## Misc
+
+- Prefer named class over `Tuple<>` for complex return types.
+- Use object initializer syntax only for "plain old data" types without constructors.
+- Namespaces: no more than 2 levels deep; top-level names must be unique.
+- Attributes go on the line above the member, separated by a newline; multiple attributes on separate lines.
+- Argument naming: for non-obvious bool/literal args, use named arguments or introduce an enum.
+
+```csharp
+// Bad
+DecimalNumber product = CalculateProduct(values, 7, false, null);
+
+// Good
+ProductOptions options = new ProductOptions();
+options.PrecisionDecimals = 7;
+options.UseCache = CacheUsage.DontUseCache;
+DecimalNumber product = CalculateProduct(values, options, completionDelegate: null);
+```

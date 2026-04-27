@@ -1,0 +1,147 @@
+---
+description: Google JavaScript Style Guide rules for JavaScript source files
+globs: **/*.js
+alwaysApply: false
+---
+
+# Google JavaScript Style Guide
+
+Reference: https://google.github.io/styleguide/jsguide.html
+
+> Note: Google recommends migrating to TypeScript. For new projects prefer the TypeScript style guide.
+
+## Source File Basics
+
+- **Encoding**: UTF-8.
+- **Filename**: all lowercase, may include `_` or `-`, extension must be `.js`.
+- **Indentation**: 2 spaces. No tabs.
+- **Line length**: 80 columns max (import statements are exempt).
+- **Semicolons**: always required at statement ends.
+
+## File Structure (in order)
+
+1. License/copyright comment (if needed)
+2. `@fileoverview` JSDoc (if needed)
+3. `goog.module` statement OR ES `import` statements
+4. `goog.require` / `goog.requireType` calls
+5. File implementation
+
+One blank line between each section; 1–2 blank lines before implementation.
+
+## Imports & Exports
+
+- ES modules: always include `.js` extension in import paths.
+- Do not import the same file multiple times.
+- Module import names (`import * as name`) use `lowerCamelCase` derived from the filename.
+- **No default exports**. Use named exports only.
+- Do not annotate the `exports` object as `@const`.
+
+```javascript
+// Good
+import * as fileOne from '../file-one.js';
+import {name} from './sibling.js';
+export {exportedArray, exportedFunction};
+
+// Bad
+export default class Foo {}   // no default exports
+import '../directory/file';   // missing .js extension
+```
+
+## Naming Conventions
+
+| Type | Convention |
+|------|-----------|
+| Packages | `lowerCamelCase` |
+| Classes | `UpperCamelCase` |
+| Methods & functions | `lowerCamelCase` |
+| Enum names | `UpperCamelCase` |
+| Enum values | `UPPER_SNAKE_CASE` |
+| Constants | `UPPER_SNAKE_CASE` |
+| Local variables | `lowerCamelCase` |
+| Parameters | `lowerCamelCase` |
+| Private members | `trailingUnderscore_` |
+
+- Test-only globals prefixed with `testOnly_`.
+- Never use `$` or `\` in names.
+
+## Variables
+
+- Use `const` by default; use `let` only when reassignment is necessary. Never use `var`.
+- Declare one variable per declaration.
+- Every variable must be declared before use.
+
+```javascript
+// Good
+const items = [];
+let count = 0;
+
+// Bad
+var x = 1, y = 2;
+```
+
+## Classes
+
+- Use `class` syntax. Do not manipulate `prototype` directly.
+- Do not use `new` for side effects; assign the result.
+- Override `toString()` only if it can never throw.
+- Static methods should not be called on instances.
+
+## Functions
+
+- Use arrow functions for anonymous function expressions.
+- Do not use `arguments`; use rest params `...args` instead.
+- Default parameters must not have side effects.
+- Prefer named functions over function expressions for top-level definitions.
+
+```javascript
+// Good
+const double = (x) => x * 2;
+function processItems(...items) { ... }
+
+// Bad
+const double = function(x) { return x * 2; };
+```
+
+## String Literals
+
+- Use single quotes `'` for ordinary strings.
+- Use template literals (backticks) when the string contains interpolation or embedded newlines.
+- Do not use `\` line continuation in strings.
+
+## Control Flow
+
+- Always use braces for `if`, `else`, `for`, `while`, `do` blocks — even single-line bodies.
+- No `switch` fallthrough (must have `break`, `return`, or `throw`; fallthrough requires a `// falls through` comment).
+- `for...of` is preferred over `for...in` for array iteration.
+
+## Type Annotations (JSDoc)
+
+- Annotate all public APIs with JSDoc `@param`, `@return`, and `@type`.
+- Use `@private` for private members (suffix name with `_` too).
+- Use `@const` for constants.
+- Use `@override` to document overriding methods.
+
+```javascript
+/**
+ * @param {string} name
+ * @param {number=} limit Optional limit.
+ * @return {!Array<string>}
+ */
+function fetchNames(name, limit = 100) { ... }
+```
+
+## Formatting
+
+- Opening brace on the same line as the statement.
+- Empty blocks may be written as `{}` on one line.
+- Operators at the end of a line when wrapping (not start of next).
+- Blank line between logically separate groups of statements.
+- No trailing whitespace.
+
+## Miscellaneous
+
+- Equality: always use `===` and `!==`, never `==` or `!=`.
+- No `eval()` or `with`.
+- `this` usage is only allowed inside class constructors, methods, and arrow functions explicitly capturing `this`.
+- Spread operator `...` is preferred over `Object.assign` for shallow copies.
+- Avoid modifying built-in prototypes.

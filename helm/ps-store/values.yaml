@@ -1,0 +1,205 @@
+# Default values for the ps-store umbrella chart.
+# Each top-level section configures one component. Override only the
+# deltas you need per environment in values-<env>.yaml.
+
+# -----------------------------------------------------------------------------
+# Global settings — shared by every component
+# -----------------------------------------------------------------------------
+global:
+  # Image registry prefix prepended to each component's image.repository when
+  # set. Leave empty to use the repository as-is (e.g. local images).
+  imageRegistry: ""
+  # imagePullSecrets — list of secret names for private registries.
+  imagePullSecrets: []
+  # Shared OpenTelemetry config. Each service inherits unless overridden.
+  otel:
+    # Zipkin spans ingest URL. Empty string disables Zipkin export.
+    zipkinEndpoint: "http://zipkin:9411/api/v2/spans"
+
+# -----------------------------------------------------------------------------
+# Game Catalog service (Python / FastAPI) — port 8001
+# -----------------------------------------------------------------------------
+gameCatalogService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ps-store/game-catalog-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  service:
+    type: ClusterIP
+    port: 8001
+  # Postgres database this service owns (resolved against .postgres.databases).
+  database: catalog_db
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Extra environment variables appended to the container spec verbatim.
+  env: []
+
+# -----------------------------------------------------------------------------
+# User service (.NET 8) — port 8002
+# -----------------------------------------------------------------------------
+userService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ps-store/user-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  service:
+    type: ClusterIP
+    port: 8002
+  database: user_db
+  # JWT issuer — non-sensitive; secrets live in Secret manifests.
+  jwtIssuer: ps-store
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  env: []
+
+# -----------------------------------------------------------------------------
+# Order service (Node.js / Express) — port 8003
+# -----------------------------------------------------------------------------
+orderService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ps-store/order-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  service:
+    type: ClusterIP
+    port: 8003
+  database: order_db
+  nodeEnv: production
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  env: []
+
+# -----------------------------------------------------------------------------
+# Frontend (React / nginx) — container port 8080
+# -----------------------------------------------------------------------------
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ps-store/frontend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  service:
+    type: ClusterIP
+    # External service port (80) — container listens on 8080 internally.
+    port: 80
+    containerPort: 8080
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# -----------------------------------------------------------------------------
+# Shared JWT secret for all backends.
+# IMPORTANT: Never commit real secrets to values.yaml. Override via -f
+# secrets.yaml (gitignored), --set, SOPS, or an external secrets manager.
+# -----------------------------------------------------------------------------
+jwt:
+  # Base64 is NOT applied here — supply the plaintext and let Helm render a
+  # stringData Secret (or switch to external secrets).
+  secret: "change-me-in-production"
+
+# -----------------------------------------------------------------------------
+# Postgres (packaged as a StatefulSet here for a self-contained demo).
+# For production, swap to the Bitnami/Crunchy chart or a managed DB and
+# set postgres.enabled=false + postgres.external.host/credentials.
+# -----------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16.6-bookworm"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  service:
+    port: 5432
+  # Credentials written into the postgres-credentials Secret. Override in
+  # production via --set or external secrets.
+  auth:
+    username: postgres
+    password: "change-me-in-production"
+  # Databases created on first boot via initdb entrypoint scripts.
+  databases:
+    - catalog_db
+    - user_db
+    - order_db
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+  # External Postgres. Used only when postgres.enabled=false.
+  external:
+    host: ""
+    port: 5432
+
+# -----------------------------------------------------------------------------
+# Ingress — single host fan-out for the whole platform.
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  host: psstore.local
+  tls:
+    enabled: false
+    secretName: ""

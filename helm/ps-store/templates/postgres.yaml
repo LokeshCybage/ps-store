@@ -1,0 +1,133 @@
+{{- if .Values.postgres.enabled }}
+{{- $c := .Values.postgres }}
+{{- $name := "postgres" }}
+{{- if $c.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+automountServiceAccountToken: false
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+data:
+  01-databases.sql: |
+{{- range $c.databases }}
+    CREATE DATABASE {{ . }};
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 4 }}
+  ports:
+    - name: postgres
+      port: {{ $c.service.port }}
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+      {{- include "ps-store.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ include "ps-store.image" (dict "ctx" . "img" $c.image) | quote }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ $c.service.port }}
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if not $c.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if $c.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{- toYaml $c.persistence.accessModes | nindent 10 }}
+        {{- with $c.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $c.persistence.size | quote }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-catalog-service
+  labels:
+    app.kubernetes.io/name: game-catalog-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: game-catalog-service
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http

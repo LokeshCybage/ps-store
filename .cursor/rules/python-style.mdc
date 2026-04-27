@@ -1,0 +1,107 @@
+---
+description: Google Python Style Guide rules for Python source files
+globs: **/*.py
+alwaysApply: false
+---
+
+# Google Python Style Guide
+
+Reference: https://google.github.io/styleguide/pyguide.html
+
+## Imports
+
+- Use `import` statements for packages/modules only — not for individual classes, functions, or types.
+- Use full package paths: `from doctor.who import jodie`, never `import jodie`.
+- No relative imports. Use absolute paths even within the same package.
+- Import order: standard library → third-party → local. Separate each group with a blank line.
+- Allowed exceptions: `typing`, `collections.abc`, `typing_extensions` may use `from x import y`.
+
+```python
+# Good
+from absl import flags
+from sound.effects import echo
+
+# Bad
+import jodie  # ambiguous, avoid relative-style imports
+```
+
+## Exceptions
+
+- Raise specific built-in exceptions (`ValueError`, `TypeError`) for programming errors.
+- Never use bare `except:` — always catch a specific exception type.
+- Do not use `assert` in place of validation logic; `assert` may be stripped at runtime.
+- Use `finally` to clean up resources.
+
+```python
+# Good
+raise ValueError(f'Min. port must be at least 1024, not {minimum}.')
+
+# Bad
+assert minimum >= 1024  # not reliable outside tests
+```
+
+## Naming Conventions
+
+| Type | Convention |
+|------|-----------|
+| Modules/packages | `snake_case` |
+| Classes | `UpperCamelCase` |
+| Functions/methods | `snake_case` |
+| Constants | `UPPER_SNAKE_CASE` |
+| Private members | `_single_leading_underscore` |
+| "Internal" dunder | `__double_leading` (avoid) |
+
+- Avoid single-character names except loop counters (`i`, `j`) or throwaway (`_`).
+- Avoid dashes in module/package names; use underscores.
+
+## Docstrings
+
+- All public modules, classes, functions, and methods **must** have docstrings.
+- Use triple double-quotes `"""`.
+- First line is a one-line summary ending with a period.
+- For functions/methods include `Args:`, `Returns:`, and `Raises:` sections.
+
+```python
+def fetch_rows(table: str, limit: int = 100) -> list[Row]:
+    """Fetches rows from the given table.
+
+    Args:
+        table: Name of the database table.
+        limit: Maximum number of rows to return.
+
+    Returns:
+        A list of Row objects.
+
+    Raises:
+        ValueError: If table name is empty.
+    """
+```
+
+## Formatting
+
+- Indent with **4 spaces**. No tabs.
+- Max line length: **80 characters**.
+- Two blank lines around top-level definitions; one blank line between methods.
+- Use f-strings for string formatting (Python 3.6+).
+- Trailing commas in multi-line sequences/dicts are encouraged.
+
+## Type Annotations
+
+- Annotate all public function signatures with types.
+- Use `Optional[X]` or `X | None` for nullable values.
+- Use `from __future__ import annotations` for forward references in older code.
+- Prefer `list[str]` over `List[str]` (Python 3.9+).
+
+```python
+def greet(name: str, title: str | None = None) -> str:
+    ...
+```
+
+## Miscellaneous
+
+- Prefer list/dict/set comprehensions over `map()`/`filter()` for simple transforms.
+- Use default iterators (`for x in list`) not `for x in list.__iter__()`.
+- Use `pylint` and suppress warnings explicitly with inline comments including a reason.
+- Do not use mutable default argument values; use `None` as sentinel.
+- Use `properties` instead of getters/setters.
+- Thread safety: use `threading.Lock` when sharing state across threads.

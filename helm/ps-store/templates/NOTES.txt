@@ -1,0 +1,36 @@
+PS Store was installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components enabled:
+{{- if .Values.gameCatalogService.enabled }}
+  - game-catalog-service  http://game-catalog-service:{{ .Values.gameCatalogService.service.port }}
+{{- end }}
+{{- if .Values.userService.enabled }}
+  - user-service          http://user-service:{{ .Values.userService.service.port }}
+{{- end }}
+{{- if .Values.orderService.enabled }}
+  - order-service         http://order-service:{{ .Values.orderService.service.port }}
+{{- end }}
+{{- if .Values.frontend.enabled }}
+  - frontend              http://frontend:{{ .Values.frontend.service.port }}
+{{- end }}
+{{- if .Values.postgres.enabled }}
+  - postgres (StatefulSet) postgres:{{ .Values.postgres.service.port }}
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+Ingress host: {{ .Values.ingress.host }}
+Add to /etc/hosts for local testing:
+  127.0.0.1  {{ .Values.ingress.host }}
+Then open:  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+
+Port-forward the frontend for a quick smoke test:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/frontend 8080:{{ .Values.frontend.service.port }}
+{{- end }}
+
+Run the Helm connection test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Review and override production values with:
+  helm upgrade {{ .Release.Name }} . -f values-prod.yaml -n {{ .Release.Namespace }}

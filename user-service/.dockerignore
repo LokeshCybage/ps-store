@@ -1,0 +1,10 @@
+.git
+bin
+obj
+**/*.user
+.vscode
+.idea
+.env
+.env.*
+**/*.log
+*.md

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: ps-store
+description: |
+  PlayStation Store umbrella chart. Packages the four microservices
+  (game-catalog, user, order, frontend) plus a PostgreSQL backend.
+type: application
+# Chart version — SemVer; bump on ANY chart change
+version: 0.1.0
+# App version — tracks the application release
+appVersion: "1.0.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - microservices
+  - playstation-store
+  - demo
+  - devops
+home: https://github.com/example/ps-store
+maintainers:
+  - name: PS Store Platform
+    email: platform@example.com

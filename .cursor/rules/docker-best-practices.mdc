@@ -1,0 +1,204 @@
+---
+description: Docker and containerization best practices for Dockerfiles, Compose files, and related config
+globs: "**/Dockerfile,**/Dockerfile.*,**/docker-compose*.yml,**/docker-compose*.yaml,**/.dockerignore,**/compose*.yml,**/compose*.yaml"
+alwaysApply: false
+---
+
+# Docker & Containerization Best Practices
+
+Reference: https://docs.docker.com/articles/dockerfile_best-practices/
+
+## Dockerfile Structure
+
+Always start with the `# syntax=docker/dockerfile:1` parser directive. Order instructions from least to most frequently changing for optimal layer caching.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:20-slim AS builder
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM gcr.io/distroless/nodejs20-debian12
+WORKDIR /app
+COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/node_modules ./node_modules
+USER nonroot
+EXPOSE 3000
+CMD ["dist/index.js"]
+```
+
+## Multi-Stage Builds
+
+- Always use multi-stage builds to separate build tools from the runtime image.
+- Stage 1 (builder): install all dependencies, compile/build.
+- Final stage: copy only compiled artifacts and production dependencies.
+- Create reusable shared stages for images with common components.
+
+```dockerfile
+# Bad — single stage, ships compilers and dev deps in production
+FROM node:20
+COPY . .
+RUN npm install && npm run build
+CMD ["node", "dist/index.js"]
+
+# Good — multi-stage, final image has no build tools
+FROM node:20-slim AS builder
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-slim
+WORKDIR /app
+COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/node_modules ./node_modules
+CMD ["node", "dist/index.js"]
+```
+
+## Base Image Selection
+
+- Use official Docker images, Verified Publisher images, or Docker-Sponsored OSS images.
+- Prefer minimal bases: Alpine (~5MB), slim variants, or distroless (2–15MB).
+- **Never use `:latest`** — pin to a specific version tag (e.g. `node:20.11-slim`).
+- For maximum reproducibility, pin to a SHA256 digest:
+  `FROM alpine:3.21@sha256:a8560b36e8...`
+
+## Security
+
+### Run as Non-Root
+
+```dockerfile
+RUN useradd --no-create-home -u 1000 appuser
+COPY --chown=appuser:appuser . /app
+USER appuser
+```
+
+For distroless images, use the built-in `nonroot` user: `USER nonroot`.
+
+### Build-Time Secrets
+
+Never `COPY` or `ENV` secrets into images. Use BuildKit secret mounts:
+
+```dockerfile
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
+```
+
+Build with: `DOCKER_BUILDKIT=1 docker build --secret id=npm_token,src=.npmrc .`
+
+### Runtime Hardening
+
+- Drop all capabilities: `--cap-drop=ALL`, then add only what's needed (`--cap-add=NET_BIND_SERVICE`).
+- Use read-only root filesystem where possible: `--read-only`.
+- Enable `--no-new-privileges` to prevent privilege escalation.
+
+## Layer Caching & Build Performance
+
+- Enable BuildKit: `export DOCKER_BUILDKIT=1`.
+- Copy dependency manifests before source code so dependency layers are cached.
+- Use BuildKit cache mounts for package managers:
+
+```dockerfile
+RUN --mount=type=cache,target=/root/.npm npm ci
+```
+
+- Sort multi-line `RUN` arguments alphabetically for easier diffs.
+- Combine related `RUN` commands with `&&` to reduce layers.
+- Clean up in the same layer: `apt-get install -y ... && rm -rf /var/lib/apt/lists/*`.
+
+## .dockerignore
+
+Always include a `.dockerignore` to exclude unnecessary files from the build context:
+
+```
+.git
+node_modules
+dist
+*.md
+.env
+.env.*
+**/*.log
+.vscode
+.idea
+```
+
+## Health Checks
+
+Define `HEALTHCHECK` so orchestrators can detect unhealthy containers:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+```
+
+For distroless images (no `curl`), use a language-native check or a tiny static binary.
+
+## Docker Compose
+
+### Development vs Production
+
+- Use a base `docker-compose.yml` + override `docker-compose.prod.yml`.
+- Deploy with: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`.
+- Remove code volume mounts in production.
+
+### Resource Limits
+
+```yaml
+services:
+  api:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+```
+
+### Service Configuration
+
+```yaml
+services:
+  api:
+    image: my-app:1.2.3          # pinned version, never :latest
+    restart: unless-stopped       # auto-restart on crash
+    read_only: true               # read-only root filesystem
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      NODE_ENV: production
+    env_file:
+      - .env                      # gitignored, never committed
+```
+
+### Secrets
+
+- Store secrets in gitignored `.env` files or Docker secrets.
+- Never commit `.env` or `secrets/` directories.
+
+## Scanning & Supply Chain
+
+- Scan images for CVEs before deployment: `docker scout cves my-app:latest` or use Trivy/Grype.
+- Generate SBOMs: `docker scout sbom my-app:latest --format spdx`.
+- Sign images with cosign; verify signatures in CI and at deploy time.
+- Lint Dockerfiles in CI with `hadolint Dockerfile`.
+
+## General Principles
+
+- **One concern per container** — decouple apps into separate services.
+- **Ephemeral containers** — design for stop/destroy/recreate with zero manual setup.
+- **Don't install unnecessary packages** — no editors, debuggers, or "nice to have" tools in production images.
+- **Use `COPY` not `ADD`** — `ADD` has implicit tar extraction and remote URL features that can be surprising.
+- **Prefer `ENTRYPOINT` + `CMD`** — `ENTRYPOINT` for the executable, `CMD` for default arguments.
+- **Rebuild images regularly** with `--pull` to pick up base image security patches.

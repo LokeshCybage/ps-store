@@ -1,0 +1,153 @@
+---
+description: Google TypeScript Style Guide rules for TypeScript source files
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Google TypeScript Style Guide
+
+Reference: https://google.github.io/styleguide/tsguide.html
+
+## Source File Basics
+
+- **Encoding**: UTF-8.
+- **Indentation**: 2 spaces. No tabs.
+- **Line length**: 80 columns max (import statements are exempt).
+- **Semicolons**: always required.
+- Use actual Unicode characters (`∞`) rather than unicode escapes where readable; use escapes (`\ufeff`) with a comment for non-printable characters.
+
+## File Structure (in order)
+
+1. Copyright/license JSDoc (if needed)
+2. `@fileoverview` JSDoc (if needed)
+3. Import statements
+4. File implementation
+
+One blank line between each present section.
+
+## Imports
+
+- Prefer **named imports** for frequently used or clearly named symbols.
+- Prefer **namespace imports** (`import * as foo`) for large APIs with many symbols.
+- Use **relative paths** (`./foo`) for files within the same project.
+- Limit `../../../` chains — deep relative paths harm readability.
+- Do **not** use default imports/exports (see Exports below).
+
+```typescript
+// Good
+import * as ng from '@angular/core';
+import {Foo} from './foo';
+
+// Bad — overlong aliased named imports
+import {Item as TableviewItem, Header as TableviewHeader} from './tableview';
+// Better
+import * as tableview from './tableview';
+```
+
+## Exports
+
+- **Always use named exports**. Never use `export default`.
+- Only export symbols used outside the module.
+- Do not use `export let` (mutable exports); use explicit getter functions instead.
+
+```typescript
+// Good
+export class Foo { ... }
+export const SOME_CONSTANT = ...;
+
+// Bad
+export default class Foo { ... }
+export let count = 0;  // mutable export — avoid
+```
+
+## Naming Conventions
+
+| Type | Convention |
+|------|-----------|
+| Classes, interfaces, types, enums, decorators | `UpperCamelCase` |
+| Variables, parameters, functions, methods | `lowerCamelCase` |
+| Constants (module-level immutables) | `UPPER_SNAKE_CASE` or `lowerCamelCase` |
+| Private class members | `lowerCamelCase` (use `private` keyword) |
+| Filenames | `kebab-case` or `lower_snake_case` |
+
+- Descriptive names always. Abbreviate only if the abbreviation is unambiguous.
+- Do not prefix interfaces with `I` (unlike C#).
+- Boolean variables/functions: `isEnabled`, `hasValue`, `canSubmit`.
+
+## Types
+
+- Use TypeScript's type system — annotate all public APIs.
+- Prefer `interface` over `type` alias for object shapes that can be extended.
+- Use `type` for unions, intersections, and mapped/conditional types.
+- Avoid `any`; use `unknown` when the type is truly unknown and narrow with type guards.
+- Do not use wrapper types (`Number`, `String`, `Boolean`) — use primitives.
+- Prefer `readonly` arrays and properties where values should not be mutated.
+
+```typescript
+// Good
+interface User {
+  readonly id: number;
+  name: string;
+}
+
+// Bad
+const x: any = fetchData();
+const s: String = 'hello';
+```
+
+## Classes
+
+- Use `class` for object-oriented patterns.
+- Mark constructor parameters with `private`/`protected`/`public` to avoid boilerplate.
+- Initialize fields in the declaration or constructor (not both).
+- Use `readonly` for fields that never change after construction.
+- Do not use `#private` fields (ES private) — use TypeScript's `private` keyword for tooling compatibility.
+
+## Functions & Arrow Functions
+
+- Use arrow functions for callbacks and short expressions.
+- Use named function declarations for top-level and method definitions.
+- Prefer optional parameters (`param?: Type`) over `param: Type | undefined`.
+
+## Control Flow
+
+- Always use braces for `if`/`else`/`for`/`while`, even for single-line bodies.
+- Prefer `for...of` over `forEach` when you need `break`/`continue`.
+- Use `===` and `!==` — never `==` or `!=`.
+
+## Error Handling
+
+- Always handle promise rejections (`.catch()` or `try/await`).
+- Never swallow errors silently.
+- Throw `Error` objects, not plain strings.
+
+```typescript
+// Good
+try {
+  await fetchData();
+} catch (e) {
+  logger.error('Failed to fetch', e);
+  throw new Error('Unable to retrieve data');
+}
+
+// Bad
+try {
+  await fetchData();
+} catch (_) {}
+```
+
+## Formatting
+
+- Opening brace on the same line.
+- Trailing commas in multi-line arrays, objects, and parameter lists.
+- No trailing whitespace.
+- Blank lines to separate logically distinct blocks.
+
+## Miscellaneous
+
+- Do not use `namespace` (except for declaration files `.d.ts`).
+- Do not use `module` keyword.
+- Avoid type assertions (`as Foo`) — prefer type-safe alternatives.
+- Decorators are allowed only when supported by the framework in use (e.g., Angular).
+- Prefer `??` (nullish coalescing) over `||` for default values when falsy values are valid.
+- Use optional chaining `?.` to simplify nullable property access.

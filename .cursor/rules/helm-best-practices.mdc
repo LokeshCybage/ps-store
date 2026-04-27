@@ -1,0 +1,131 @@
+---
+description: Helm chart authoring, templating, and values best practices
+globs: helm/**/*.{yaml,yml,tpl}
+alwaysApply: false
+---
+
+# Helm Best Practices
+
+Authoritative standards for authoring and reviewing Helm charts in this repo.
+Based on [Helm chart best practices](https://helm.sh/docs/chart_best_practices/).
+
+## Chart Structure
+
+Standard layout — do not deviate:
+
+```
+<chart>/
+├── Chart.yaml
+├── values.yaml
+├── values-<env>.yaml      # per-environment overrides
+├── .helmignore
+├── charts/                # dependency charts (helm dep update)
+└── templates/
+    ├── NOTES.txt
+    ├── _helpers.tpl
+    ├── <component>.yaml   # one file per component
+    └── tests/
+```
+
+## Chart.yaml
+
+- `apiVersion: v2` always
+- `name`: lowercase kebab-case, matches chart directory
+- `version`: SemVer, bump on **any** chart change
+- `appVersion`: quoted string, tracks the app, not the chart
+- Always set `kubeVersion`, `description`, `keywords`, `maintainers`
+- Pin every dependency with exact `version` and `repository`; gate with `condition:`
+
+## Values
+
+- Use **camelCase** for all keys (`imagePullPolicy`, not `image_pull_policy`)
+- Document every value with a comment (purpose, type, default)
+- Group related values under a single object (`image.repository`, `image.tag`, `image.pullPolicy`)
+- Provide sane defaults in `values.yaml`; override only deltas in `values-<env>.yaml`
+- Never put secrets in `values.yaml` — use `--set`, `-f secrets.yaml` (gitignored), SOPS, or external secrets
+- Booleans: `true`/`false` only — never `yes`/`no`/`on`/`off`
+
+```yaml
+# ❌ BAD
+image_tag: latest
+enable_autoscaling: yes
+
+# ✅ GOOD
+image:
+  repository: myapp
+  tag: "1.2.0"           # pin; quote numeric-looking tags
+  pullPolicy: IfNotPresent
+autoscaling:
+  enabled: true
+```
+
+## Templates
+
+- One resource file per component; group tightly-coupled resources (Deployment + Service + ConfigMap) with `---`
+- Use `{{ include "chart.name" . }}` helpers — never hardcode names
+- Quote all strings that could be numeric: `tag: {{ .Values.image.tag | quote }}`
+- Use `nindent`, not `indent`, to avoid leading-newline issues
+- Gate optional resources with `{{- if .Values.foo.enabled }} … {{- end }}`
+- Use `toYaml` for passthrough blocks (`resources`, `nodeSelector`, `tolerations`)
+- Prefer `required "msg" .Values.foo` over silent defaults for mandatory inputs
+
+```yaml
+# ❌ BAD
+image: myapp:{{ .Values.image.tag }}
+
+# ✅ GOOD
+image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+imagePullPolicy: {{ .Values.image.pullPolicy }}
+resources:
+  {{- toYaml .Values.resources | nindent 12 }}
+```
+
+## Labels
+
+Centralize in `_helpers.tpl`. Every resource must carry the standard set:
+
+```yaml
+app.kubernetes.io/name: {{ .component }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/component: {{ .component }}
+app.kubernetes.io/part-of: {{ include "chart.name" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+helm.sh/chart: {{ include "chart.chart" . }}
+```
+
+Selector labels (immutable) must be a **strict subset** of common labels — do not include `version` or `helm.sh/chart` in selectors.
+
+## Dependencies
+
+- Run `helm dependency update` and commit `Chart.lock`
+- Do not commit `charts/*.tgz` — they are regenerated from the lock
+- Gate each dependency with a `condition:` so it can be disabled
+
+## Validation (mandatory before commit)
+
+Run in the chart directory:
+
+```bash
+helm lint .
+helm template release-name . -f values.yaml --debug
+helm template release-name . -f values-prod.yaml --debug
+helm install release-name . --dry-run --debug
+```
+
+CI must run `helm lint` and `kubeconform` (or `kubeval`) against rendered manifests.
+
+## Hooks and Tests
+
+- Use `helm.sh/hook: pre-install|pre-upgrade` for migrations, with `hook-delete-policy: hook-succeeded`
+- Include at least one `templates/tests/` connection check so `helm test <release>` works
+- Never use hooks for ordinary resources — they bypass normal release tracking
+
+## Anti-Patterns
+
+- ❌ Using `:latest` tags — pin to SemVer or digest
+- ❌ Hardcoding `namespace:` in templates — let `-n` / `.Release.Namespace` drive it
+- ❌ Computing names with raw string concat instead of `include "chart.fullname"`
+- ❌ Embedding secrets in `values.yaml` or `ConfigMap`
+- ❌ Skipping `appVersion` bumps when the app image tag changes
+- ❌ Using `lookup` for logic that should be values-driven (breaks `--dry-run`)

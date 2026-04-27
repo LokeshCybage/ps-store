@@ -1,0 +1,166 @@
+---
+description: Kubernetes manifest, Helm chart, and configuration best practices
+globs: "**/*.{yaml,yml}"
+alwaysApply: false
+---
+
+# Kubernetes Best Practices
+
+## General Configuration
+
+- Use the latest stable API version (`kubectl api-resources` to check)
+- Write manifests in YAML, not JSON
+- Use only `true`/`false` for booleans — never `yes`/`no`/`on`/`off`
+- Store all manifests in version control
+- Group related objects (Deployment + Service + ConfigMap) in a single file separated by `---`
+- Keep manifests minimal — omit redundant default values
+
+## Naming and Labels
+
+Apply the standard Kubernetes label set to every resource:
+
+```yaml
+metadata:
+  labels:
+    app.kubernetes.io/name: my-app
+    app.kubernetes.io/instance: my-app-prod
+    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/managed-by: helm
+```
+
+- Use lowercase kebab-case for label values
+- Add `kubernetes.io/description` annotations to explain why a resource exists
+- Never use `kubernetes.io/` or `k8s.io/` prefixes for custom labels
+
+## Workloads
+
+- Never create naked Pods — use Deployments, StatefulSets, or Jobs
+- Set `replicas >= 2` for production Deployments
+- Use `RollingUpdate` strategy with sensible `maxSurge`/`maxUnavailable`
+- Pin container images to SHA256 digests in production, not mutable tags like `latest`
+
+## Resource Management
+
+Always set requests and limits for every container:
+
+```yaml
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+```
+
+- Set requests to average usage, limits to 2–3x requests
+- For critical workloads, set requests = limits (Guaranteed QoS)
+- Use `kubectl top pods` to measure actual consumption and tune values
+- Apply `ResourceQuota` and `LimitRange` per namespace to prevent resource starvation
+
+## Health Probes
+
+Define all three probe types for every container:
+
+```yaml
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  failureThreshold: 30
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  periodSeconds: 5
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  periodSeconds: 10
+```
+
+- `startupProbe` prevents premature kills during slow init
+- `readinessProbe` gates traffic to pods that are truly ready
+- `livenessProbe` restarts stuck containers
+- Set `initialDelaySeconds` and `failureThreshold` based on actual startup time
+
+## Security
+
+### Pod Security Context
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+```
+
+### Container Security Context
+
+```yaml
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+```
+
+- Apply the Pod Security Standards "restricted" profile at the namespace level
+- Create dedicated ServiceAccounts per workload — never rely on the `default` account
+- Follow least-privilege RBAC: no wildcards in verbs or resources, prefer namespace-scoped Roles over ClusterRoles
+
+## Networking
+
+- Use `ClusterIP` services by default; `NodePort`/`LoadBalancer` only when needed
+- Prefer the Gateway API (`HTTPRoute`, `Gateway`) over legacy `Ingress` resources
+- Enforce TLS termination at the edge with Cert-Manager for automated certificate management
+- Implement default-deny `NetworkPolicy` per namespace, then allow only required traffic:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+```
+
+## Namespaces
+
+- Use separate namespaces for environments (`dev`, `staging`, `prod`) and teams
+- Apply `ResourceQuota` per namespace
+- Enforce Pod Security Standards via namespace labels:
+
+```yaml
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+```
+
+## ConfigMaps and Secrets
+
+- Store non-sensitive configuration in ConfigMaps, sensitive data in Secrets
+- Never commit plaintext Secrets to version control — use Sealed Secrets, SOPS, or an external secrets manager
+- Mount Secrets as volumes instead of environment variables when possible
+- Use `immutable: true` on ConfigMaps/Secrets that do not change, for performance
+
+## Helm Charts
+
+- Follow the standard chart layout: `Chart.yaml`, `values.yaml`, `templates/`, `_helpers.tpl`
+- Use SemVer for chart versions
+- Centralise labels in `_helpers.tpl`
+- Document every value in `values.yaml` with comments (purpose, type, default)
+- Maintain environment-specific overrides (`values-prod.yaml`, `values-staging.yaml`)
+- Run `helm lint` and `kubeconform` in CI before deploy
+- Use Helm hooks for pre-install checks and database migrations

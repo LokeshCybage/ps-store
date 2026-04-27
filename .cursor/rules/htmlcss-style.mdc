@@ -1,0 +1,169 @@
+---
+description: Google HTML/CSS Style Guide rules for HTML and CSS source files
+globs: **/*.{html,css,scss,sass}
+alwaysApply: false
+---
+
+# Google HTML/CSS Style Guide
+
+Reference: https://google.github.io/styleguide/htmlcssguide.html
+
+## General Rules
+
+- **Encoding**: Use UTF-8 (no BOM). Declare `<meta charset="utf-8">` in HTML.
+- **Protocol**: Always use `https:` for embedded resources (scripts, stylesheets, images).
+- **Indentation**: 2 spaces. No tabs, no mixed indentation.
+- **Capitalization**: All code lowercase — element names, attributes, attribute values, CSS selectors, properties, and property values.
+- **Trailing whitespace**: Remove all trailing whitespace.
+- **TODOs**: Mark with `TODO:` only (not `@@` or other formats).
+
+## HTML Rules
+
+### Document Structure
+
+- Always start with `<!doctype html>`.
+- Specify `<meta charset="utf-8">` early in `<head>`.
+- Use valid HTML (validate with [W3C validator](https://validator.w3.org/nu/)).
+
+```html
+<!-- Good -->
+<!doctype html>
+<meta charset="utf-8">
+<title>Page Title</title>
+<article>Content here.</article>
+```
+
+### Semantics
+
+- Use elements for their intended purpose: `<h1>`–`<h6>` for headings, `<p>` for paragraphs, `<a>` for links, `<button>` for actions.
+- Never use `<div onclick="">` where a semantic element is appropriate.
+
+```html
+<!-- Bad -->
+<div onclick="goToRecommendations();">All recommendations</div>
+
+<!-- Good -->
+<a href="recommendations/">All recommendations</a>
+```
+
+### Accessibility
+
+- Always provide meaningful `alt` attributes on `<img>` elements.
+- Use `alt=""` only for purely decorative images.
+- Provide captions/transcripts for `<video>` and `<audio>`.
+
+### Separation of Concerns
+
+- HTML: structure only. No inline styles (`style=""`), no inline scripts.
+- CSS: presentation. Move all styling to external stylesheets.
+- JS: behavior. Move all scripting to external scripts.
+
+### Optional Tags & Formatting
+
+- Omit optional closing tags where allowed (e.g., `</li>`, `</p>`) — but be consistent within a project.
+- Do not use entity references for characters that can be written directly (e.g., use `€` not `&euro;`). Only escape `<`, `>`, `&`, and invisible/control characters.
+- Use double quotes for attribute values: `<a href="/">`.
+- Omit `type` attributes for stylesheets and scripts (HTML5 defaults apply).
+
+```html
+<!-- Bad -->
+<link rel="stylesheet" type="text/css" href="styles.css">
+<script type="text/javascript" src="app.js"></script>
+
+<!-- Good -->
+<link rel="stylesheet" href="styles.css">
+<script src="app.js"></script>
+```
+
+### Formatting Rules
+
+- New line for every block, list, or table element; indent child elements.
+- Inline elements may stay on the same line as their parent.
+
+```html
+<ul>
+  <li>Item one
+  <li>Item two
+</ul>
+```
+
+## CSS Rules
+
+### Validity & IDs
+
+- Use valid CSS. Validate with [W3C CSS validator](https://jigsaw.w3.org/css-validator/).
+- Use **class selectors** (`.my-class`) not ID selectors (`#my-id`) for styling.
+
+### Naming
+
+- Use **lowercase with hyphens** for class/ID names: `video-id`, `ads-sample`.
+- Names should be as short as possible but as long as necessary to be meaningful.
+- Avoid presentational names (`red`, `left`) — prefer functional names (`warning`, `nav`).
+
+```css
+/* Bad */
+#navigation {}
+.atr {}
+.red {}
+
+/* Good */
+.nav {}
+.author {}
+.warning {}
+```
+
+### Formatting
+
+- One declaration per line.
+- Opening brace on the same line as the selector, space before it.
+- Closing brace on its own line.
+- Add a space after `:` in declarations.
+- End every declaration with `;`, including the last one.
+- Separate rules with a blank line.
+
+```css
+.video {
+  margin-top: 1em;
+}
+
+.audio {
+  margin-top: 1em;
+}
+```
+
+### Values & Shorthand
+
+- Use shorthand properties where possible: `padding: 0 1em 2em` not four separate rules.
+- Omit unit for zero values: `margin: 0` not `margin: 0px`.
+- Use lowercase hex values and shorthand when possible: `#fff` not `#FFFFFF`.
+- Use single quotes for attribute selectors and property values: `content: ''`.
+
+```css
+/* Bad */
+padding-top: 0px;
+color: #EEBBCC;
+
+/* Good */
+padding-top: 0;
+color: #ebc;
+```
+
+### Selector & Declaration Order
+
+- Group related rules; separate groups with a blank line and a comment.
+- Within a rule, order declarations alphabetically.
+
+```css
+/* Video */
+.video {
+  background: #fff;
+  border: 1px solid;
+  margin: 0;
+  padding: 0 1em;
+}
+```
+
+### Media Queries & Comments
+
+- Place media queries as close to their relevant rules as possible, not in a separate block at the end.
+- Use `/* Section: Header */` style block comments to separate major sections.

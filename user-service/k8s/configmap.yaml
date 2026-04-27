@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+data:
+  Jwt__Issuer: ps-store
+  ServiceUrls__CatalogService: http://catalog-service:8001
+  ServiceUrls__OrderService: http://order-service:8003
+  OTEL_SERVICE_NAME: user-service
+  OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+
