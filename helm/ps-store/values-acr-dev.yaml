@@ -1,0 +1,30 @@
+gameCatalogService:
+  image:
+    repository: pspsstoredev.azurecr.io/ps-store/game-catalog
+    tag: "dev-30cac42"
+    pullPolicy: IfNotPresent
+
+userService:
+  image:
+    repository: pspsstoredev.azurecr.io/ps-store/user-service
+    tag: "dev-30cac42-fix1"
+    pullPolicy: IfNotPresent
+
+orderService:
+  image:
+    repository: pspsstoredev.azurecr.io/ps-store/order-service
+    tag: "dev-30cac42"
+    pullPolicy: IfNotPresent
+
+frontend:
+  image:
+    repository: pspsstoredev.azurecr.io/ps-store/frontend
+    tag: "dev-30cac42-fix2"
+    pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ""
+  tls:
+    enabled: false

@@ -1,0 +1,92 @@
+---
+description: Azure DevOps Pipelines YAML conventions
+globs: **/azure-pipelines*.yml,**/.azure-pipelines/**/*.yml,**/.azure-pipelines/**/*.yaml,**/azure-pipelines/**/*.yml
+alwaysApply: false
+---
+
+# Azure Pipelines YAML
+
+Apply these rules whenever editing Azure DevOps pipeline YAML.
+
+## Structure
+
+- Always use `stages -> jobs -> steps`, even for small pipelines.
+- Set `displayName` on every `stage`, `job`, `task`, and `script`.
+- Extract reuse into templates under `.azure-pipelines/templates/` and consume via `template:` + typed `parameters:`.
+- Use `deployment:` jobs (with `environment:`) for any deploy step. Never deploy from a plain `job:`.
+
+## Pinning & reproducibility
+
+- Pin every task to a major version: `UseDotNet@2`, `PublishPipelineArtifact@1`. Reject unversioned tasks.
+- Pin `vmImage` to a specific image (`ubuntu-22.04`, `windows-2022`, `macOS-14`) for release-bearing pipelines. `ubuntu-latest` is only acceptable for throwaway/PR-only pipelines.
+- Pin third-party container/tool versions referenced in `script:` blocks.
+
+## Triggers
+
+- Always scope `trigger:` and `pr:` with `branches:` and (where useful) `paths:`. Never use `trigger: '*'`.
+- Disable PR triggers explicitly with `pr: none` if not wanted - don't leave it implicit.
+
+## Variables & secrets
+
+- Secrets come from variable groups backed by Key Vault: `variables: - group: <name>`. Never hardcode tokens, connection strings, or passwords.
+- Do not pass secrets via `parameters:` - they are not protected.
+- Use `${{ }}` for compile-time, `$()` for runtime macro, `$[ ]` for runtime expressions. Don't mix forms by accident.
+
+## Scripts
+
+- Bash scripts must start with `set -euo pipefail` (or use `failOnStderr: true`).
+- PowerShell scripts must set `$ErrorActionPreference = 'Stop'`.
+- Long inline scripts (>20 lines) must move to a checked-in script file under `scripts/` and be invoked from the step.
+
+## Conditions
+
+- Make conditions explicit when not the default; prefer named expressions:
+  ```yaml
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  ```
+- Use `succeededOrFailed()` / `always()` only for cleanup/publish steps and justify with a comment.
+
+## Examples
+
+```yaml
+# BAD
+- task: UseDotNet
+  inputs: { version: 8.x }
+- script: dotnet build
+
+# GOOD
+- task: UseDotNet@2
+  displayName: Install .NET 8
+  inputs:
+    version: 8.x
+- script: |
+    set -euo pipefail
+    dotnet build --configuration $(buildConfiguration)
+  displayName: Build
+```
+
+```yaml
+# BAD - secret in parameter, plain job for deploy
+parameters:
+  - name: prodToken
+    type: string
+jobs:
+  - job: deployProd
+    steps:
+      - script: deploy.sh ${{ parameters.prodToken }}
+
+# GOOD - variable group + deployment job + environment approvals
+variables:
+  - group: prod-secrets
+jobs:
+  - deployment: deployProd
+    environment: production
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - script: deploy.sh
+              env:
+                PROD_TOKEN: $(prodToken)
+              displayName: Deploy to prod
+```

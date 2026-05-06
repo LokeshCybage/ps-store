@@ -1,133 +1,157 @@
 {{- if .Values.postgres.enabled }}
-{{- $c := .Values.postgres }}
-{{- $name := "postgres" }}
-{{- if $c.serviceAccount.create }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: postgres
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 4 }}
 automountServiceAccountToken: false
 ---
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+immutable: true
 data:
   01-databases.sql: |
-{{- range $c.databases }}
+    {{- range .Values.postgres.databases }}
     CREATE DATABASE {{ . }};
-{{- end }}
+    {{- end }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: postgres
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Headless service backing the postgres StatefulSet (stable DNS)."
 spec:
-  type: ClusterIP
   clusterIP: None
-  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 4 }}
+  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
   ports:
     - name: postgres
-      port: {{ $c.service.port }}
+      port: {{ .Values.postgres.service.port }}
       targetPort: postgres
+      protocol: TCP
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: postgres
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Postgres backing store for all services."
 spec:
-  serviceName: {{ $name }}
+  serviceName: postgres
   replicas: 1
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 8 }}
+      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 8 }}
+      annotations:
+        {{- include "ps-store.podAnnotations" (dict "ctx" . "config" (toYaml .Values.postgres)) | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+      serviceAccountName: postgres
+      automountServiceAccountToken: false
       {{- include "ps-store.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
-        seccompProfile:
-          type: RuntimeDefault
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: postgres
-          image: {{ include "ps-store.image" (dict "ctx" . "img" $c.image) | quote }}
-          imagePullPolicy: {{ $c.image.pullPolicy }}
+          image: {{ include "ps-store.image" (dict "ctx" . "img" .Values.postgres.image) | quote }}
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
           ports:
             - name: postgres
-              containerPort: {{ $c.service.port }}
+              containerPort: 5432
           env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "postgres.credentialsSecret.name is required" .Values.postgres.credentialsSecret.name | quote }}
+                  key: {{ .Values.postgres.credentialsSecret.userKey | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "postgres.credentialsSecret.name is required" .Values.postgres.credentialsSecret.name | quote }}
+                  key: {{ .Values.postgres.credentialsSecret.passwordKey | quote }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
-          envFrom:
-            - secretRef:
-                name: postgres-credentials
-          resources: {{- toYaml $c.resources | nindent 12 }}
+          resources: {{- toYaml .Values.postgres.resources | nindent 12 }}
+          startupProbe:
+            exec: { command: ["pg_isready","-U","postgres"] }
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            exec: { command: ["pg_isready","-U","postgres"] }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec: { command: ["pg_isready","-U","postgres"] }
+            periodSeconds: 20
+            timeoutSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            capabilities: { drop: ["ALL"] }
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-            - name: init
+            - name: init-scripts
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
-            - name: run
-              mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
-          startupProbe:
-            exec:
-              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 30
-          readinessProbe:
-            exec:
-              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 6
-          livenessProbe:
-            exec:
-              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
-            periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 5
+            - name: run
+              mountPath: /var/run/postgresql
       volumes:
-        - name: init
+        - name: init-scripts
           configMap:
             name: postgres-init
-        - name: run
-          emptyDir: {}
+            defaultMode: 0444
         - name: tmp
-          emptyDir: {}
-        {{- if not $c.persistence.enabled }}
-        - name: data
-          emptyDir: {}
-        {{- end }}
-  {{- if $c.persistence.enabled }}
+          emptyDir: { sizeLimit: 64Mi }
+        - name: run
+          emptyDir: { sizeLimit: 64Mi }
+  {{- if .Values.postgres.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
         name: data
+        labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 10 }}
       spec:
-        accessModes: {{- toYaml $c.persistence.accessModes | nindent 10 }}
-        {{- with $c.persistence.storageClass }}
-        storageClassName: {{ . | quote }}
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.postgres.persistence.storageClassName }}
+        storageClassName: {{ .Values.postgres.persistence.storageClassName | quote }}
         {{- end }}
         resources:
           requests:
-            storage: {{ $c.persistence.size | quote }}
+            storage: {{ .Values.postgres.persistence.size | quote }}
   {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Only backend services may connect to Postgres."
+spec:
+  podSelector:
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 6 }}
+  policyTypes: ["Ingress","Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["game-catalog","user-service","order-service"]
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress: []
 {{- end }}

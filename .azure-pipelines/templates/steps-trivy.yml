@@ -1,0 +1,50 @@
+parameters:
+  - name: image
+    type: string
+  - name: reportsDir
+    type: string
+    default: 'security-reports'
+  - name: trivyVersion
+    type: string
+    default: '0.65.0'
+  - name: severity
+    type: string
+    default: 'HIGH,CRITICAL'
+  - name: exitCode
+    type: string
+    default: '0'
+
+steps:
+  - bash: |
+      set -euo pipefail
+      mkdir -p "${{ parameters.reportsDir }}"
+
+      curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${{ parameters.trivyVersion }}/trivy_${{ parameters.trivyVersion }}_Linux-64bit.tar.gz" \
+        -o trivy.tgz
+      tar -xzf trivy.tgz trivy
+      sudo install -m 0755 trivy /usr/local/bin/trivy
+
+      trivy --version
+    displayName: Install Trivy
+
+  - bash: |
+      set -euo pipefail
+      mkdir -p "${{ parameters.reportsDir }}"
+
+      trivy image \
+        --severity "${{ parameters.severity }}" \
+        --exit-code "${{ parameters.exitCode }}" \
+        --ignore-unfixed \
+        --format sarif \
+        --output "${{ parameters.reportsDir }}/trivy.sarif" \
+        "${{ parameters.image }}"
+
+      trivy image \
+        --severity "${{ parameters.severity }}" \
+        --exit-code 0 \
+        --ignore-unfixed \
+        --format json \
+        --output "${{ parameters.reportsDir }}/trivy.json" \
+        "${{ parameters.image }}"
+    displayName: Trivy scan image
+

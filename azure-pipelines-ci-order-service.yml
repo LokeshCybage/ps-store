@@ -1,0 +1,102 @@
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - order-service/*
+      - order-service/**
+      - .azure-pipelines/**
+      - azure-pipelines-ci-order-service.yml
+    exclude:
+      - '**/*.md'
+
+pr:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - order-service/*
+      - order-service/**
+      - .azure-pipelines/**
+      - azure-pipelines-ci-order-service.yml
+    exclude:
+      - '**/*.md'
+
+variables:
+  - name: vmImage
+    value: ubuntu-22.04
+  - name: nodeVersion
+    value: '20.x'
+  - name: imageRepository
+    value: ps-store/order-service
+  - name: imageTag
+    value: $(Build.SourceVersion)
+
+stages:
+  - stage: CI
+    displayName: CI
+    jobs:
+      - template: .azure-pipelines/templates/ci-docker-sonar.yml
+        parameters:
+          serviceName: order-service
+          servicePath: order-service
+          vmImage: $(vmImage)
+
+          sonarServiceConnection: $(SONARQUBE_SERVICE_CONNECTION)
+          sonarProjectKey: $(SONAR_ORDER_SERVICE_PROJECT_KEY)
+          sonarProjectName: $(SONAR_ORDER_SERVICE_PROJECT_NAME)
+          sonarSources: order-service
+          sonarExtraProperties: |
+            sonar.javascript.lcov.reportPaths=order-service/coverage/lcov.info
+
+          acrServiceConnection: $(ACR_SERVICE_CONNECTION)
+          imageRepository: $(imageRepository)
+          imageTag: $(imageTag)
+          dockerfile: order-service/Dockerfile
+          buildContext: order-service
+
+          testSteps:
+            - task: NodeTool@0
+              displayName: Use Node $(nodeVersion)
+              inputs:
+                versionSpec: $(nodeVersion)
+
+            - bash: |
+                set -euo pipefail
+                npm ci
+              workingDirectory: order-service
+              displayName: Install dependencies
+
+            - bash: |
+                set -euo pipefail
+                npm run test:coverage
+              workingDirectory: order-service
+              displayName: Run tests (jest) + coverage
+
+            - template: .azure-pipelines/templates/steps-publish-test-coverage.yml
+              parameters:
+                testResultsFormat: JUnit
+                testResultsFiles: order-service/test-results.xml
+                testRunTitle: order-service
+                coverageTool: Cobertura
+                coverageSummaryFile: order-service/coverage/cobertura-coverage.xml
+                coverageReportDirectory: order-service/coverage
+
+            - bash: |
+                set -euo pipefail
+                mkdir -p pipeline
+                cat > pipeline/image-info.json <<'EOF'
+                {
+                  "service": "order-service",
+                  "repository": "$(imageRepository)",
+                  "tag": "$(imageTag)"
+                }
+                EOF
+              displayName: Write image metadata
+
+            - task: PublishPipelineArtifact@1
+              displayName: Publish image metadata
+              inputs:
+                targetPath: pipeline/image-info.json
+                artifact: image-info-order-service
+

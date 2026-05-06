@@ -1,0 +1,29 @@
+{
+    "mcpServers": {
+      "Azure MCP Server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@azure/mcp@latest",
+          "server",
+          "start"
+        ]
+      },
+      "azureDevOps": {
+        "command": "npx",
+        "args": ["-y", "@tiberriver256/mcp-server-azure-devops"],
+        "env": {
+          "AZURE_DEVOPS_ORG_URL": "https://dev.azure.com/your-organization",
+          "AZURE_DEVOPS_AUTH_METHOD": "azure-identity",
+          "AZURE_DEVOPS_DEFAULT_PROJECT": "your-project-name"
+        }
+      },
+      "postgresql-mcp": {
+        "command": "npx",
+        "args": [
+          "@henkey/postgres-mcp-server",
+          "--connection-string", "postgresql://postgres:postgres@localhost:5432/postgres"
+        ]
+      }
+    }
+  }

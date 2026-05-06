@@ -1,10 +1,14 @@
 ---
-description: Kubernetes manifest, Helm chart, and configuration best practices
-globs: "**/*.{yaml,yml}"
+description: Kubernetes manifest and workload configuration best practices (raw manifests, RBAC, NetworkPolicy, probes, security contexts). For Helm-specific guidance see `helm-best-practices.mdc`.
+globs: "**/{manifests,k8s,kubernetes,deploy,deployments}/**/*.{yaml,yml}"
 alwaysApply: false
 ---
 
 # Kubernetes Best Practices
+
+Authoritative standards for raw Kubernetes manifests in this repo. For Helm
+chart authoring (`Chart.yaml`, `values.yaml`, `templates/`, `_helpers.tpl`),
+see `helm-best-practices.mdc` instead.
 
 ## General Configuration
 
@@ -32,14 +36,17 @@ metadata:
 
 - Use lowercase kebab-case for label values
 - Add `kubernetes.io/description` annotations to explain why a resource exists
-- Never use `kubernetes.io/` or `k8s.io/` prefixes for custom labels
+- Use `kubernetes.io/change-cause` on Deployments to record rollout reasons (`kubectl rollout history` reads it)
+- Never use `kubernetes.io/` or `k8s.io/` prefixes for **custom** labels — these are reserved for well-known keys (`app.kubernetes.io/*`, `pod-security.kubernetes.io/*`, etc.)
 
 ## Workloads
 
 - Never create naked Pods — use Deployments, StatefulSets, or Jobs
-- Set `replicas >= 2` for production Deployments
-- Use `RollingUpdate` strategy with sensible `maxSurge`/`maxUnavailable`
-- Pin container images to SHA256 digests in production, not mutable tags like `latest`
+- Set `replicas >= 2` for production Deployments and pair with a `PodDisruptionBudget` (`minAvailable: 1` minimum) to survive node drains
+- Use `RollingUpdate` strategy with explicit `maxSurge`/`maxUnavailable` (`maxUnavailable: 0` for zero-downtime services)
+- Spread replicas across nodes/zones using `topologySpreadConstraints` or pod anti-affinity
+- Pin images to immutable references — never `:latest` or other mutable tags. Prefer SHA256 digests in production
+- Set `imagePullPolicy: IfNotPresent` for digest-pinned or version-pinned images; reserve `Always` for development
 
 ## Resource Management
 
@@ -62,31 +69,34 @@ resources:
 
 ## Health Probes
 
-Define all three probe types for every container:
+Every container MUST define `readinessProbe` and `livenessProbe`. Add
+`startupProbe` only for containers with slow / variable startup time
+(migrations, JVM warmup, large model loads).
 
 ```yaml
-startupProbe:
+startupProbe:           # only for slow-start containers
   httpGet:
     path: /healthz
     port: 8080
   failureThreshold: 30
   periodSeconds: 10
-readinessProbe:
+readinessProbe:         # required
   httpGet:
     path: /ready
     port: 8080
   periodSeconds: 5
-livenessProbe:
+livenessProbe:          # required
   httpGet:
     path: /healthz
     port: 8080
   periodSeconds: 10
 ```
 
-- `startupProbe` prevents premature kills during slow init
 - `readinessProbe` gates traffic to pods that are truly ready
 - `livenessProbe` restarts stuck containers
-- Set `initialDelaySeconds` and `failureThreshold` based on actual startup time
+- `startupProbe`, when present, suspends liveness/readiness until it succeeds — preventing premature kills during slow init
+- Use distinct paths/logic for liveness vs. readiness; a failing dependency should fail readiness (drain traffic), not liveness (kill the pod)
+- Tune `initialDelaySeconds` and `failureThreshold` to actual measured startup time
 
 ## Security
 
@@ -151,16 +161,27 @@ metadata:
 ## ConfigMaps and Secrets
 
 - Store non-sensitive configuration in ConfigMaps, sensitive data in Secrets
-- Never commit plaintext Secrets to version control — use Sealed Secrets, SOPS, or an external secrets manager
-- Mount Secrets as volumes instead of environment variables when possible
-- Use `immutable: true` on ConfigMaps/Secrets that do not change, for performance
+- Never commit plaintext Secrets to version control — use Sealed Secrets, SOPS, or an external secrets manager (External Secrets Operator)
+- Mount Secrets as volumes (with `defaultMode: 0400`) instead of environment variables when possible
+- Use `immutable: true` on ConfigMaps/Secrets that do not change, for performance and safety
+- Trigger pod restarts on config changes via a `checksum/config` annotation on the pod template
 
-## Helm Charts
+## Validation
 
-- Follow the standard chart layout: `Chart.yaml`, `values.yaml`, `templates/`, `_helpers.tpl`
-- Use SemVer for chart versions
-- Centralise labels in `_helpers.tpl`
-- Document every value in `values.yaml` with comments (purpose, type, default)
-- Maintain environment-specific overrides (`values-prod.yaml`, `values-staging.yaml`)
-- Run `helm lint` and `kubeconform` in CI before deploy
-- Use Helm hooks for pre-install checks and database migrations
+Before applying manifests, validate them:
+
+```bash
+# Schema and best-practice validation
+kubeconform -strict -summary manifest.yaml
+
+# Server-side dry-run (catches admission webhook violations)
+kubectl apply --dry-run=server -f manifest.yaml
+
+# Lint with kube-linter or polaris for security/reliability checks
+kube-linter lint manifest.yaml
+```
+
+## Related Rules
+
+- `helm-best-practices.mdc` — Helm chart authoring (`Chart.yaml`, `values.yaml`, `templates/`, `_helpers.tpl`, hooks, dependencies)
+- `docker-best-practices.mdc` — container image standards consumed by these manifests

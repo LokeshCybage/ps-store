@@ -1,0 +1,35 @@
+parameters:
+  - name: serviceConnection
+    type: string
+  - name: projectKey
+    type: string
+  - name: projectName
+    type: string
+  - name: sources
+    type: string
+  - name: extraProperties
+    type: string
+    default: ''
+
+steps:
+  - task: SonarQubePrepare@7
+    displayName: Prepare SonarQube analysis
+    inputs:
+      SonarQube: ${{ parameters.serviceConnection }}
+      scannerMode: CLI
+      configMode: manual
+      cliProjectKey: ${{ parameters.projectKey }}
+      cliProjectName: ${{ parameters.projectName }}
+      cliSources: ${{ parameters.sources }}
+      extraProperties: |
+        sonar.sourceEncoding=UTF-8
+        ${{ parameters.extraProperties }}
+
+  - task: SonarQubeAnalyze@7
+    displayName: Run SonarQube analysis
+
+  - task: SonarQubePublish@7
+    displayName: Publish SonarQube quality gate
+    inputs:
+      pollingTimeoutSec: '300'
+

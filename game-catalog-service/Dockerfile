@@ -4,8 +4,7 @@ FROM python:3.12.8-slim-bookworm AS builder
 WORKDIR /app
 
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m venv /opt/venv \
+RUN python -m venv /opt/venv \
     && . /opt/venv/bin/activate \
     && pip install --no-cache-dir -r requirements.txt
 

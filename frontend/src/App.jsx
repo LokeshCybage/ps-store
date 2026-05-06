@@ -42,6 +42,8 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        {/* Avoid blank screen on unknown paths (e.g. /api/ opened in browser). */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

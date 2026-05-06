@@ -1,0 +1,47 @@
+# Node
+**/node_modules/
+**/coverage/
+**/test-results.xml
+**/dist/
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/.coverage
+**/coverage.xml
+
+# .NET
+**/bin/
+**/obj/
+**/TestResults/
+**/CoverageReport/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+backend.hcl
+**/*.tfplan
+**/tfplan.*
+**/*.binary
+tfapply.txt
+tfplan.txt
+

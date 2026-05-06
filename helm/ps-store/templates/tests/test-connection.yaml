@@ -1,50 +1,29 @@
-{{- /*
-Helm test: verify each enabled service answers on its health/root endpoint.
-Run with: helm test <release-name> -n <namespace>
-*/ -}}
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "ps-store.name" . }}-test-connection"
+  name: "{{ include "ps-store.fullname" . }}-test-connection"
   labels: {{- include "ps-store.labels" (dict "ctx" . "component" "test") | nindent 4 }}
   annotations:
-    helm.sh/hook: test
-    helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+    "helm.sh/hook": test
 spec:
   restartPolicy: Never
-  serviceAccountName: default
+  automountServiceAccountToken: false
   securityContext:
     runAsNonRoot: true
-    runAsUser: 65532
-    seccompProfile:
-      type: RuntimeDefault
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
   containers:
-    - name: curl
-      image: curlimages/curl:8.10.1
+    - name: wget
+      image: busybox:1.36.1
+      command: ["sh","-c"]
+      args:
+        - >-
+          wget -q -O- http://frontend:{{ .Values.frontend.service.port }}/ >/dev/null
+          && wget -q -O- http://game-catalog:{{ .Values.gameCatalogService.service.port }}/health >/dev/null
+          && wget -q -O- http://user-service:{{ .Values.userService.service.port }}/health >/dev/null
+          && wget -q -O- http://order-service:{{ .Values.orderService.service.port }}/health >/dev/null
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
-        capabilities:
-          drop: ["ALL"]
-      command:
-        - sh
-        - -c
-        - |
-          set -eu
-          {{- if .Values.gameCatalogService.enabled }}
-          echo "Checking game-catalog-service..."
-          curl -fsS "http://game-catalog-service:{{ .Values.gameCatalogService.service.port }}/health"
-          {{- end }}
-          {{- if .Values.userService.enabled }}
-          echo "Checking user-service..."
-          curl -fsS "http://user-service:{{ .Values.userService.service.port }}/health"
-          {{- end }}
-          {{- if .Values.orderService.enabled }}
-          echo "Checking order-service..."
-          curl -fsS "http://order-service:{{ .Values.orderService.service.port }}/health"
-          {{- end }}
-          {{- if .Values.frontend.enabled }}
-          echo "Checking frontend..."
-          curl -fsS -o /dev/null "http://frontend:{{ .Values.frontend.service.port }}/"
-          {{- end }}
-          echo "All checks passed."
+        capabilities: { drop: ["ALL"] }
