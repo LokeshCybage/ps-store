@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const catalogApi = axios.create({
+export const catalogAPI = axios.create({
   baseURL: import.meta.env.VITE_CATALOG_API || 'http://localhost:8001',
 });
 
@@ -22,6 +22,6 @@ function attachAuthInterceptor(instance) {
   });
 }
 
-attachAuthInterceptor(catalogApi);
+attachAuthInterceptor(catalogAPI);
 attachAuthInterceptor(userApi);
 attachAuthInterceptor(orderApi);
