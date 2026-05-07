@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { catalogApi, orderApi, userApi } from '../api';
+import { catalogAPI, orderApi, userApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import StarRating from '../components/StarRating';
 import './GameDetail.css';
@@ -39,7 +39,7 @@ export default function GameDetail() {
 
   useEffect(() => {
     setLoading(true);
-    catalogApi
+    catalogAPI
       .get(`/api/games/${id}`)
       .then((res) => setGame(res.data))
       .catch((err) => setError(err.response?.data?.message || 'Failed to load game'))
@@ -76,7 +76,7 @@ export default function GameDetail() {
     if (!isAuthenticated) return;
     setSubmitting(true);
     try {
-      await catalogApi.post(`/api/games/${id}/reviews`, {
+      await catalogAPI.post(`/api/games/${id}/reviews`, {
         game_id: id,
         rating: reviewRating,
         review_text: reviewText || null,
@@ -84,7 +84,7 @@ export default function GameDetail() {
       showMessage('Review submitted!');
       setReviewText('');
       setReviewRating(5);
-      const res = await catalogApi.get(`/api/games/${id}`);
+      const res = await catalogAPI.get(`/api/games/${id}`);
       setGame(res.data);
     } catch (err) {
       const detail = err.response?.data?.detail || 'Failed to submit review';

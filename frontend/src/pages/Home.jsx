@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { catalogApi } from '../api';
+import { catalogAPI } from '../api';
 import GameGrid from '../components/GameGrid';
 import './Home.css';
 
@@ -10,7 +10,7 @@ export default function Home() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    catalogApi
+    catalogAPI
       .get('/api/games/featured')
       .then((res) => setFeatured(res.data))
       .catch((err) => setError(err.response?.data?.message || 'Failed to load featured games'))

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { catalogApi } from '../api';
+import { catalogAPI } from '../api';
 import GameGrid from '../components/GameGrid';
 import './Browse.css';
 
@@ -32,7 +32,7 @@ export default function Browse() {
   );
 
   useEffect(() => {
-    catalogApi
+    catalogAPI
       .get('/api/categories')
       .then((res) => setCategories(res.data.categories || res.data || []))
       .catch(() => {});
@@ -48,7 +48,7 @@ export default function Browse() {
     if (onSale) params.on_sale = true;
     params.page = page;
 
-    catalogApi
+    catalogAPI
       .get('/api/games', { params })
       .then((res) => {
         setGames(res.data.games || res.data || []);
