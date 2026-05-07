@@ -1,36 +1,30 @@
-PS Store was installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+1) Ensure required Secrets exist (no secrets are stored in values.yaml):
 
-Components enabled:
-{{- if .Values.gameCatalogService.enabled }}
-  - game-catalog-service  http://game-catalog-service:{{ .Values.gameCatalogService.service.port }}
-{{- end }}
-{{- if .Values.userService.enabled }}
-  - user-service          http://user-service:{{ .Values.userService.service.port }}
-{{- end }}
-{{- if .Values.orderService.enabled }}
-  - order-service         http://order-service:{{ .Values.orderService.service.port }}
-{{- end }}
-{{- if .Values.frontend.enabled }}
-  - frontend              http://frontend:{{ .Values.frontend.service.port }}
-{{- end }}
-{{- if .Values.postgres.enabled }}
-  - postgres (StatefulSet) postgres:{{ .Values.postgres.service.port }}
-{{- end }}
+  - Postgres credentials secret (default name: {{ .Values.postgres.credentialsSecret.name }})
+      keys:
+        - {{ .Values.postgres.credentialsSecret.userKey }}
+        - {{ .Values.postgres.credentialsSecret.passwordKey }}
 
-{{- if .Values.ingress.enabled }}
+  - Game catalog secret (default name: {{ .Values.gameCatalogService.existingSecret.name }})
+      keys:
+        - {{ .Values.gameCatalogService.existingSecret.databaseUrlKey }}
+        - {{ .Values.gameCatalogService.existingSecret.jwtSecretKey }}
 
-Ingress host: {{ .Values.ingress.host }}
-Add to /etc/hosts for local testing:
-  127.0.0.1  {{ .Values.ingress.host }}
-Then open:  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
-{{- else }}
+  - User service secret (default name: {{ .Values.userService.existingSecret.name }})
+      keys:
+        - {{ .Values.userService.existingSecret.connectionStringKey }}
+        - {{ .Values.userService.existingSecret.jwtSecretKey }}
 
-Port-forward the frontend for a quick smoke test:
-  kubectl -n {{ .Release.Namespace }} port-forward svc/frontend 8080:{{ .Values.frontend.service.port }}
-{{- end }}
+  - Order service secret (default name: {{ .Values.orderService.existingSecret.name }})
+      keys:
+        - {{ .Values.orderService.existingSecret.databaseUrlKey }}
+        - {{ .Values.orderService.existingSecret.jwtSecretKey }}
 
-Run the Helm connection test:
-  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+2) Install:
 
-Review and override production values with:
-  helm upgrade {{ .Release.Name }} . -f values-prod.yaml -n {{ .Release.Namespace }}
+  helm install {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }} --create-namespace
+
+3) Render (debug):
+
+  helm template {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }} --debug
+  helm template {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }} -f values-prod.yaml --debug

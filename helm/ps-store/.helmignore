@@ -1,17 +1,20 @@
-# Patterns to ignore when packaging Helm charts.
 .DS_Store
 .git/
+.github/
 .gitignore
 .idea/
 .vscode/
-*.tmproj
-*.bak
+
 *.swp
-*.tgz
-*.orig
-*~
-# OWNERS is not used by this chart
-OWNERS
-# CI / local-only
-ci/
-tests/
+*.tmp
+*.bak
+
+node_modules/
+dist/
+bin/
+obj/
+
+.env
+.env.*
+*/.env
+*/.env.*

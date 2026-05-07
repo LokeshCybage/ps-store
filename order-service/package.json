@@ -4,7 +4,13 @@
   "description": "Order microservice for PlayStation Store application",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "jest --ci",
+    "test:coverage": "jest --ci --coverage"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "jest-junit": "^16.0.0"
   },
   "dependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.72.0",

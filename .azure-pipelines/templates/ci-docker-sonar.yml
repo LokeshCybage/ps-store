@@ -1,0 +1,104 @@
+parameters:
+  - name: serviceName
+    type: string
+  - name: servicePath
+    type: string
+  - name: vmImage
+    type: string
+    default: ubuntu-22.04
+
+  # SonarQube
+  - name: sonarServiceConnection
+    type: string
+  - name: sonarProjectKey
+    type: string
+  - name: sonarProjectName
+    type: string
+  - name: sonarSources
+    type: string
+  - name: sonarExtraProperties
+    type: string
+    default: ''
+
+  # Docker / ACR
+  - name: acrServiceConnection
+    type: string
+  - name: imageRepository
+    type: string # e.g. ps-store/frontend (no registry host)
+  - name: imageTag
+    type: string
+  - name: dockerfile
+    type: string
+  - name: buildContext
+    type: string
+
+  # Test steps are service-specific
+  - name: testSteps
+    type: stepList
+    default: []
+
+  # Trivy
+  - name: trivyExitCode
+    type: string
+    default: '0'
+
+jobs:
+  - job: ci_${{ parameters.serviceName }}
+    displayName: CI (${{ parameters.serviceName }})
+    pool:
+      vmImage: ${{ parameters.vmImage }}
+    steps:
+      - checkout: self
+        fetchDepth: 1
+
+      - ${{ each step in parameters.testSteps }}:
+          - ${{ step }}
+
+      - template: steps-sonarqube.yml
+        parameters:
+          serviceConnection: ${{ parameters.sonarServiceConnection }}
+          projectKey: ${{ parameters.sonarProjectKey }}
+          projectName: ${{ parameters.sonarProjectName }}
+          sources: ${{ parameters.sonarSources }}
+          extraProperties: ${{ parameters.sonarExtraProperties }}
+
+      - task: Docker@2
+        displayName: Build and push image
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        inputs:
+          command: buildAndPush
+          containerRegistry: ${{ parameters.acrServiceConnection }}
+          repository: ${{ parameters.imageRepository }}
+          dockerfile: ${{ parameters.dockerfile }}
+          buildContext: ${{ parameters.buildContext }}
+          tags: |
+            ${{ parameters.imageTag }}
+
+      - bash: |
+          set -euo pipefail
+          echo "Skipping image push/scan on non-main branch."
+        displayName: Skip push/scan (non-main)
+        condition: ne(variables['Build.SourceBranch'], 'refs/heads/main')
+
+      - task: Docker@2
+        displayName: Pull pushed image (main)
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        inputs:
+          command: pull
+          containerRegistry: ${{ parameters.acrServiceConnection }}
+          arguments: ${{ parameters.imageRepository }}:${{ parameters.imageTag }}
+
+      - template: steps-trivy.yml
+        parameters:
+          image: ${{ parameters.imageRepository }}:${{ parameters.imageTag }}
+          reportsDir: security-reports/${{ parameters.serviceName }}
+          exitCode: ${{ parameters.trivyExitCode }}
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish security reports
+        condition: succeededOrFailed()
+        inputs:
+          targetPath: security-reports
+          artifact: security-reports
+

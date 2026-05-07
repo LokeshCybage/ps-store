@@ -1,0 +1,82 @@
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - helm/ps-store/*
+      - helm/ps-store/**
+      - k8s/*
+      - k8s/**
+      - .azure-pipelines/**
+      - azure-pipelines-cd-aks.yml
+    exclude:
+      - '**/*.md'
+
+pr: none
+
+variables:
+  - name: vmImage
+    value: ubuntu-22.04
+  - name: namespace
+    value: ps-store
+  - name: releaseName
+    value: ps-store
+  - name: imageTag
+    value: $(Build.SourceVersion)
+
+stages:
+  - stage: Deploy_Dev
+    displayName: Deploy (dev)
+    jobs:
+      - deployment: deploy_dev
+        displayName: Deploy to AKS (dev)
+        environment: ps-store-dev
+        pool:
+          vmImage: $(vmImage)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 1
+
+                - template: .azure-pipelines/templates/deploy-helm-aks.yml
+                  parameters:
+                    azureSubscription: $(AZURE_SUBSCRIPTION_SERVICE_CONNECTION)
+                    aksResourceGroup: $(AKS_RESOURCE_GROUP)
+                    aksClusterName: $(AKS_CLUSTER_NAME)
+                    namespace: $(namespace)
+                    releaseName: $(releaseName)
+                    chartPath: helm/ps-store
+                    acrLoginServer: $(ACR_LOGIN_SERVER)
+                    imageTag: $(imageTag)
+
+  - stage: Deploy_Prod
+    displayName: Deploy (prod)
+    dependsOn: Deploy_Dev
+    condition: succeeded()
+    jobs:
+      - deployment: deploy_prod
+        displayName: Deploy to AKS (prod)
+        environment: ps-store-prod
+        pool:
+          vmImage: $(vmImage)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 1
+
+                - template: .azure-pipelines/templates/deploy-helm-aks.yml
+                  parameters:
+                    azureSubscription: $(AZURE_SUBSCRIPTION_SERVICE_CONNECTION)
+                    aksResourceGroup: $(AKS_RESOURCE_GROUP)
+                    aksClusterName: $(AKS_CLUSTER_NAME)
+                    namespace: $(namespace)
+                    releaseName: $(releaseName)
+                    chartPath: helm/ps-store
+                    valuesFile: helm/ps-store/values-prod.yaml
+                    acrLoginServer: $(ACR_LOGIN_SERVER)
+                    imageTag: $(imageTag)
+

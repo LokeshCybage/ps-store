@@ -1,0 +1,24 @@
+project_name  = "ps-store"
+environment   = "dev"
+location      = "eastus"
+name_prefix   = "ps"
+
+# Optional: override network CIDRs
+# vnet_address_space    = ["10.0.0.0/16"]
+# aks_node_subnet_cidr  = "10.0.1.0/24"
+# aks_pod_subnet_cidr   = "10.0.2.0/24"
+
+# ACR
+acr_sku = "Standard"
+
+# AKS
+# aks_kubernetes_version   = "1.30.5"
+aks_system_node_vm_size = "Standard_D2s_v3"
+aks_system_node_count   = 2
+
+enable_log_analytics = true
+
+tags = {
+  owner = "platform"
+}
+

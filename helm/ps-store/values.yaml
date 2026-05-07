@@ -1,55 +1,104 @@
-# Default values for the ps-store umbrella chart.
-# Each top-level section configures one component. Override only the
-# deltas you need per environment in values-<env>.yaml.
+# Default values for ps-store.
+# This file contains NO secrets. Provide sensitive values via:
+# - pre-created Kubernetes Secrets (recommended), or
+# - a separate gitignored values file passed via -f.
 
-# -----------------------------------------------------------------------------
-# Global settings — shared by every component
-# -----------------------------------------------------------------------------
-global:
-  # Image registry prefix prepended to each component's image.repository when
-  # set. Leave empty to use the repository as-is (e.g. local images).
-  imageRegistry: ""
-  # imagePullSecrets — list of secret names for private registries.
-  imagePullSecrets: []
-  # Shared OpenTelemetry config. Each service inherits unless overridden.
-  otel:
-    # Zipkin spans ingest URL. Empty string disables Zipkin export.
-    zipkinEndpoint: "http://zipkin:9411/api/v2/spans"
+# Name overrides (optional)
+nameOverride: ""
+fullnameOverride: ""
 
-# -----------------------------------------------------------------------------
-# Game Catalog service (Python / FastAPI) — port 8001
-# -----------------------------------------------------------------------------
+# Global labels/annotations (optional)
+commonLabels: {}
+commonAnnotations: {}
+
+# Image pull secrets (optional)
+imagePullSecrets: []
+
+# Namespace resources (optional; prefer `--create-namespace`)
+namespace:
+  create: false
+  name: ps-store
+  podSecurity:
+    enforce: restricted
+    warn: restricted
+    audit: restricted
+
+# Default-deny NetworkPolicies (recommended when your CNI supports it)
+networkPolicy:
+  enabled: true
+
+# Ingress for the UI and API routing
+ingress:
+  enabled: true
+  className: nginx
+  host: ps-store.local
+  tls:
+    enabled: false
+    secretName: ps-store-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+
+# Postgres (StatefulSet)
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16.6-bookworm"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: "" # empty means cluster default
+  resources:
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
+  # Secret containing POSTGRES_USER and POSTGRES_PASSWORD
+  credentialsSecret:
+    name: postgres-credentials
+    userKey: POSTGRES_USER
+    passwordKey: POSTGRES_PASSWORD
+  databases:
+    - catalog_db
+    - user_db
+    - order_db
+
+# Game Catalog (Python/FastAPI) — port 8001
 gameCatalogService:
   enabled: true
   replicaCount: 2
   image:
-    repository: ps-store/game-catalog-service
+    repository: ps-store/game-catalog
     tag: "1.0.0"
     pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: ""
   service:
     type: ClusterIP
     port: 8001
-  # Postgres database this service owns (resolved against .postgres.databases).
-  database: catalog_db
   resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
-  # Extra environment variables appended to the container spec verbatim.
+  config:
+    otelServiceName: game-catalog-service
+    otelZipkinEndpoint: http://zipkin.observability.svc.cluster.local:9411/api/v2/spans
+    orderServiceUrl: http://order-service:8003
+    userServiceUrl: http://user-service:8002
+  existingSecret:
+    name: game-catalog
+    databaseUrlKey: DATABASE_URL
+    jwtSecretKey: JWT_SECRET
   env: []
 
-# -----------------------------------------------------------------------------
-# User service (.NET 8) — port 8002
-# -----------------------------------------------------------------------------
+# User Service (.NET 8) — port 8002
 userService:
   enabled: true
   replicaCount: 2
@@ -57,30 +106,35 @@ userService:
     repository: ps-store/user-service
     tag: "1.0.0"
     pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: ""
   service:
     type: ClusterIP
     port: 8002
-  database: user_db
-  # JWT issuer — non-sensitive; secrets live in Secret manifests.
-  jwtIssuer: ps-store
   resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
+  config:
+    jwtIssuer: ps-store
+    catalogServiceUrl: http://game-catalog:8001
+    orderServiceUrl: http://order-service:8003
+    otelServiceName: user-service
+    otelZipkinEndpoint: http://zipkin.observability.svc.cluster.local:9411/api/v2/spans
+    zipkinEndpoint: http://zipkin.observability.svc.cluster.local:9411/api/v2/spans
+  existingSecret:
+    name: user-service
+    connectionStringKey: ConnectionStrings__DefaultConnection
+    jwtSecretKey: Jwt__Secret
   env: []
 
-# -----------------------------------------------------------------------------
-# Order service (Node.js / Express) — port 8003
-# -----------------------------------------------------------------------------
+# Order Service (Node.js/Express) — port 8003
 orderService:
   enabled: true
   replicaCount: 2
@@ -88,29 +142,34 @@ orderService:
     repository: ps-store/order-service
     tag: "1.0.0"
     pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: ""
   service:
     type: ClusterIP
     port: 8003
-  database: order_db
-  nodeEnv: production
   resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
+  config:
+    nodeEnv: production
+    catalogServiceUrl: http://game-catalog:8001
+    userServiceUrl: http://user-service:8002
+    otelServiceName: order-service
+    otelZipkinEndpoint: http://zipkin.observability.svc.cluster.local:9411/api/v2/spans
+  existingSecret:
+    name: order-service
+    databaseUrlKey: DATABASE_URL
+    jwtSecretKey: JWT_SECRET
   env: []
 
-# -----------------------------------------------------------------------------
-# Frontend (React / nginx) — container port 8080
-# -----------------------------------------------------------------------------
+# Frontend (React/Nginx) — service port 80
 frontend:
   enabled: true
   replicaCount: 2
@@ -118,88 +177,17 @@ frontend:
     repository: ps-store/frontend
     tag: "1.0.0"
     pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: ""
   service:
     type: ClusterIP
-    # External service port (80) — container listens on 8080 internally.
     port: 80
-    containerPort: 8080
   resources:
-    requests:
-      cpu: "50m"
-      memory: "64Mi"
-    limits:
-      cpu: "200m"
-      memory: "128Mi"
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { cpu: "250m", memory: "128Mi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
-
-# -----------------------------------------------------------------------------
-# Shared JWT secret for all backends.
-# IMPORTANT: Never commit real secrets to values.yaml. Override via -f
-# secrets.yaml (gitignored), --set, SOPS, or an external secrets manager.
-# -----------------------------------------------------------------------------
-jwt:
-  # Base64 is NOT applied here — supply the plaintext and let Helm render a
-  # stringData Secret (or switch to external secrets).
-  secret: "change-me-in-production"
-
-# -----------------------------------------------------------------------------
-# Postgres (packaged as a StatefulSet here for a self-contained demo).
-# For production, swap to the Bitnami/Crunchy chart or a managed DB and
-# set postgres.enabled=false + postgres.external.host/credentials.
-# -----------------------------------------------------------------------------
-postgres:
-  enabled: true
-  image:
-    repository: postgres
-    tag: "16.6-bookworm"
-    pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: ""
-  service:
-    port: 5432
-  # Credentials written into the postgres-credentials Secret. Override in
-  # production via --set or external secrets.
-  auth:
-    username: postgres
-    password: "change-me-in-production"
-  # Databases created on first boot via initdb entrypoint scripts.
-  databases:
-    - catalog_db
-    - user_db
-    - order_db
-  persistence:
-    enabled: true
-    storageClass: ""
-    size: 5Gi
-    accessModes:
-      - ReadWriteOnce
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "256Mi"
-    limits:
-      cpu: "1"
-      memory: "512Mi"
-  # External Postgres. Used only when postgres.enabled=false.
-  external:
-    host: ""
-    port: 5432
-
-# -----------------------------------------------------------------------------
-# Ingress — single host fan-out for the whole platform.
-# -----------------------------------------------------------------------------
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-  host: psstore.local
-  tls:
-    enabled: false
-    secretName: ""

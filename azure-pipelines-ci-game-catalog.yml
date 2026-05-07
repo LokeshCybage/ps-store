@@ -1,0 +1,106 @@
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - game-catalog-service/*
+      - game-catalog-service/**
+      - .azure-pipelines/**
+      - azure-pipelines-ci-game-catalog.yml
+    exclude:
+      - '**/*.md'
+
+pr:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - game-catalog-service/*
+      - game-catalog-service/**
+      - .azure-pipelines/**
+      - azure-pipelines-ci-game-catalog.yml
+    exclude:
+      - '**/*.md'
+
+variables:
+  - name: vmImage
+    value: ubuntu-22.04
+  - name: pythonVersion
+    value: '3.12'
+  - name: imageRepository
+    value: ps-store/game-catalog
+  - name: imageTag
+    value: $(Build.SourceVersion)
+
+stages:
+  - stage: CI
+    displayName: CI
+    jobs:
+      - template: .azure-pipelines/templates/ci-docker-sonar.yml
+        parameters:
+          serviceName: game-catalog
+          servicePath: game-catalog-service
+          vmImage: $(vmImage)
+
+          sonarServiceConnection: $(SONARQUBE_SERVICE_CONNECTION)
+          sonarProjectKey: $(SONAR_GAME_CATALOG_PROJECT_KEY)
+          sonarProjectName: $(SONAR_GAME_CATALOG_PROJECT_NAME)
+          sonarSources: game-catalog-service
+          sonarExtraProperties: |
+            sonar.python.coverage.reportPaths=game-catalog-service/coverage.xml
+
+          acrServiceConnection: $(ACR_SERVICE_CONNECTION)
+          imageRepository: $(imageRepository)
+          imageTag: $(imageTag)
+          dockerfile: game-catalog-service/Dockerfile
+          buildContext: game-catalog-service
+
+          testSteps:
+            - task: UsePythonVersion@0
+              displayName: Use Python $(pythonVersion)
+              inputs:
+                versionSpec: $(pythonVersion)
+
+            - bash: |
+                set -euo pipefail
+                python -m pip install --upgrade pip
+                pip install -r requirements.txt
+              workingDirectory: game-catalog-service
+              displayName: Install dependencies
+
+            - bash: |
+                set -euo pipefail
+                pytest -q \
+                  --junitxml test-results.xml \
+                  --cov=app \
+                  --cov-report=xml:coverage.xml
+              workingDirectory: game-catalog-service
+              displayName: Run tests (pytest) + coverage
+
+            - template: .azure-pipelines/templates/steps-publish-test-coverage.yml
+              parameters:
+                testResultsFormat: JUnit
+                testResultsFiles: game-catalog-service/test-results.xml
+                testRunTitle: game-catalog-service
+                coverageTool: Cobertura
+                coverageSummaryFile: game-catalog-service/coverage.xml
+                coverageReportDirectory: game-catalog-service
+
+            - bash: |
+                set -euo pipefail
+                mkdir -p pipeline
+                cat > pipeline/image-info.json <<'EOF'
+                {
+                  "service": "game-catalog",
+                  "repository": "$(imageRepository)",
+                  "tag": "$(imageTag)"
+                }
+                EOF
+              displayName: Write image metadata
+
+            - task: PublishPipelineArtifact@1
+              displayName: Publish image metadata
+              inputs:
+                targetPath: pipeline/image-info.json
+                artifact: image-info-game-catalog
+

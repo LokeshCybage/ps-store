@@ -1,38 +1,52 @@
 {{- if .Values.userService.enabled }}
-{{- $c := .Values.userService }}
-{{- $name := "user-service" }}
-{{- if $c.serviceAccount.create }}
+{{- $cfg := toYaml .Values.userService.config -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
 automountServiceAccountToken: false
 ---
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: user-service-config
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+immutable: true
 data:
-  ASPNETCORE_URLS: "http://+:{{ $c.service.port }}"
-  Jwt__Issuer: {{ $c.jwtIssuer | quote }}
-  ServiceUrls__CatalogService: "http://game-catalog-service:{{ .Values.gameCatalogService.service.port }}"
-  ServiceUrls__OrderService: "http://order-service:{{ .Values.orderService.service.port }}"
-  OTEL_SERVICE_NAME: {{ $name | quote }}
-  {{- with .Values.global.otel.zipkinEndpoint }}
-  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ . | quote }}
-  Zipkin__Endpoint: {{ . | quote }}
-  {{- end }}
+  ASPNETCORE_URLS: {{ printf "http://0.0.0.0:%v" .Values.userService.service.port | quote }}
+  ASPNETCORE_ENVIRONMENT: "Production"
+  Jwt__Issuer: {{ .Values.userService.config.jwtIssuer | quote }}
+  ServiceUrls__CatalogService: {{ .Values.userService.config.catalogServiceUrl | quote }}
+  ServiceUrls__OrderService: {{ .Values.userService.config.orderServiceUrl | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.userService.config.otelServiceName | quote }}
+  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ .Values.userService.config.otelZipkinEndpoint | quote }}
+  Zipkin__Endpoint: {{ .Values.userService.config.zipkinEndpoint | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+spec:
+  type: {{ .Values.userService.service.type }}
+  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.userService.service.port }}
+      targetPort: http
+      protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: ".NET 8 user service backed by Postgres."
+    kubernetes.io/change-cause: "Helm managed rollout"
 spec:
-  replicas: {{ $c.replicaCount }}
+  replicas: {{ .Values.userService.replicaCount }}
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -40,86 +54,163 @@ spec:
       maxSurge: 1
       maxUnavailable: 0
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "user-service") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 8 }}
+      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "user-service") | nindent 8 }}
+      annotations:
+        {{- include "ps-store.podAnnotations" (dict "ctx" . "config" $cfg) | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+      serviceAccountName: user-service
+      automountServiceAccountToken: false
       {{- include "ps-store.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "user-service"
       containers:
-        - name: {{ $name }}
-          image: {{ include "ps-store.image" (dict "ctx" . "img" $c.image) | quote }}
-          imagePullPolicy: {{ $c.image.pullPolicy }}
+        - name: user-service
+          image: {{ include "ps-store.image" (dict "ctx" . "img" .Values.userService.image) | quote }}
+          imagePullPolicy: {{ .Values.userService.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ $c.service.port }}
+              containerPort: {{ .Values.userService.service.port }}
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "userService.existingSecret.name is required" .Values.userService.existingSecret.name | quote }}
+                  key: {{ .Values.userService.existingSecret.connectionStringKey | quote }}
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "userService.existingSecret.name is required" .Values.userService.existingSecret.name | quote }}
+                  key: {{ .Values.userService.existingSecret.jwtSecretKey | quote }}
           envFrom:
             - configMapRef:
-                name: user-service-config
-            - secretRef:
-                name: user-service-secrets
-          {{- with $c.env }}
-          env:
-            {{- toYaml . | nindent 12 }}
+                name: user-service
+          {{- with .Values.userService.env }}
+          {{- toYaml . | nindent 10 }}
           {{- end }}
-          resources: {{- toYaml $c.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+          resources: {{- toYaml .Values.userService.resources | nindent 12 }}
           startupProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 5
-            timeoutSeconds: 2
             failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir: { sizeLimit: 64Mi }
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
-spec:
-  type: {{ $c.service.type }}
-  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 4 }}
-  ports:
-    - name: http
-      port: {{ $c.service.port }}
-      targetPort: http
-{{- if $c.podDisruptionBudget.enabled }}
----
+{{- if .Values.userService.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
 spec:
-  minAvailable: {{ $c.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.userService.podDisruptionBudget.minAvailable }}
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "user-service") | nindent 6 }}
 {{- end }}
+---
+{{- if .Values.userService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: user-service
+  minReplicas: {{ .Values.userService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.userService.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.userService.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.userService.autoscaling.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "user-service") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "user-service") | nindent 6 }}
+  policyTypes: ["Ingress","Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["frontend","game-catalog","order-service"]
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.userService.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "postgres"
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+              app.kubernetes.io/component: "postgres"
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["game-catalog","order-service"]
+      ports:
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8003
 {{- end }}

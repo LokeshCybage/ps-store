@@ -1,0 +1,36 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "network-policy") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Deny all ingress/egress by default; workload policies grant required traffic."
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress","Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "network-policy") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "All pods may resolve DNS via kube-dns/CoreDNS in kube-system."
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

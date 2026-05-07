@@ -1,37 +1,50 @@
 {{- if .Values.orderService.enabled }}
-{{- $c := .Values.orderService }}
-{{- $name := "order-service" }}
-{{- if $c.serviceAccount.create }}
+{{- $cfg := toYaml .Values.orderService.config -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
 automountServiceAccountToken: false
 ---
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: order-service-config
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+immutable: true
 data:
-  PORT: {{ $c.service.port | quote }}
-  NODE_ENV: {{ $c.nodeEnv | quote }}
-  CATALOG_SERVICE_URL: "http://game-catalog-service:{{ .Values.gameCatalogService.service.port }}"
-  USER_SERVICE_URL: "http://user-service:{{ .Values.userService.service.port }}"
-  OTEL_SERVICE_NAME: {{ $name | quote }}
-  {{- with .Values.global.otel.zipkinEndpoint }}
-  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ . | quote }}
-  {{- end }}
+  PORT: {{ .Values.orderService.service.port | quote }}
+  NODE_ENV: {{ .Values.orderService.config.nodeEnv | quote }}
+  CATALOG_SERVICE_URL: {{ .Values.orderService.config.catalogServiceUrl | quote }}
+  USER_SERVICE_URL: {{ .Values.orderService.config.userServiceUrl | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.orderService.config.otelServiceName | quote }}
+  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ .Values.orderService.config.otelZipkinEndpoint | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+spec:
+  type: {{ .Values.orderService.service.type }}
+  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.orderService.service.port }}
+      targetPort: http
+      protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Node.js/Express order service backed by Postgres."
+    kubernetes.io/change-cause: "Helm managed rollout"
 spec:
-  replicas: {{ $c.replicaCount }}
+  replicas: {{ .Values.orderService.replicaCount }}
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -39,86 +52,163 @@ spec:
       maxSurge: 1
       maxUnavailable: 0
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "order-service") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 8 }}
+      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "order-service") | nindent 8 }}
+      annotations:
+        {{- include "ps-store.podAnnotations" (dict "ctx" . "config" $cfg) | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+      serviceAccountName: order-service
+      automountServiceAccountToken: false
       {{- include "ps-store.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "order-service"
       containers:
-        - name: {{ $name }}
-          image: {{ include "ps-store.image" (dict "ctx" . "img" $c.image) | quote }}
-          imagePullPolicy: {{ $c.image.pullPolicy }}
+        - name: order-service
+          image: {{ include "ps-store.image" (dict "ctx" . "img" .Values.orderService.image) | quote }}
+          imagePullPolicy: {{ .Values.orderService.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ $c.service.port }}
+              containerPort: {{ .Values.orderService.service.port }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "orderService.existingSecret.name is required" .Values.orderService.existingSecret.name | quote }}
+                  key: {{ .Values.orderService.existingSecret.databaseUrlKey | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "orderService.existingSecret.name is required" .Values.orderService.existingSecret.name | quote }}
+                  key: {{ .Values.orderService.existingSecret.jwtSecretKey | quote }}
           envFrom:
             - configMapRef:
-                name: order-service-config
-            - secretRef:
-                name: order-service-secrets
-          {{- with $c.env }}
-          env:
-            {{- toYaml . | nindent 12 }}
+                name: order-service
+          {{- with .Values.orderService.env }}
+          {{- toYaml . | nindent 10 }}
           {{- end }}
-          resources: {{- toYaml $c.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+          resources: {{- toYaml .Values.orderService.resources | nindent 12 }}
           startupProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 5
-            timeoutSeconds: 2
             failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir: { sizeLimit: 64Mi }
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
-spec:
-  type: {{ $c.service.type }}
-  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 4 }}
-  ports:
-    - name: http
-      port: {{ $c.service.port }}
-      targetPort: http
-{{- if $c.podDisruptionBudget.enabled }}
----
+{{- if .Values.orderService.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
 spec:
-  minAvailable: {{ $c.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.orderService.podDisruptionBudget.minAvailable }}
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "order-service") | nindent 6 }}
 {{- end }}
+---
+{{- if .Values.orderService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: {{ .Values.orderService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.orderService.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.orderService.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.orderService.autoscaling.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-service
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "order-service") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "order-service") | nindent 6 }}
+  policyTypes: ["Ingress","Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["frontend","game-catalog","user-service"]
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.orderService.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "postgres"
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+              app.kubernetes.io/component: "postgres"
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["game-catalog","user-service"]
+      ports:
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8002
 {{- end }}

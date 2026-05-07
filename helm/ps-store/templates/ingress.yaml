@@ -1,65 +1,79 @@
-{{- if .Values.ingress.enabled }}
-{{- $i := .Values.ingress }}
+{{- if and .Values.ingress.enabled .Values.frontend.enabled }}
+---
+# API routes: regex + rewrite-target must NOT apply to /assets/* or the SPA returns index.html for JS/CSS.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "ps-store.name" . }}
+  name: {{ include "ps-store.fullname" . }}-api
   labels: {{- include "ps-store.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
-  {{- with $i.annotations }}
   annotations:
+    kubernetes.io/description: "Rewrites /api/<svc>/* to each microservice (see rewrite-target)."
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
-  ingressClassName: {{ $i.className }}
-  {{- if $i.tls.enabled }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ $i.host | quote }}
-      secretName: {{ required "ingress.tls.secretName required when tls.enabled=true" $i.tls.secretName }}
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ required "ingress.tls.secretName is required when tls.enabled=true" .Values.ingress.tls.secretName | quote }}
   {{- end }}
   rules:
-    - host: {{ $i.host | quote }}
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
       http:
         paths:
-          {{- if .Values.gameCatalogService.enabled }}
-          - path: /api/games
-            pathType: Prefix
+          - path: /api/catalog(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
-                name: game-catalog-service
+                name: game-catalog
                 port:
                   number: {{ .Values.gameCatalogService.service.port }}
-          - path: /api/categories
-            pathType: Prefix
-            backend:
-              service:
-                name: game-catalog-service
-                port:
-                  number: {{ .Values.gameCatalogService.service.port }}
-          {{- end }}
-          {{- if .Values.userService.enabled }}
-          {{- range (list "/api/auth" "/api/users" "/api/wishlist" "/api/library") }}
-          - path: {{ . }}
-            pathType: Prefix
+          - path: /api/users(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: user-service
                 port:
-                  number: {{ $.Values.userService.service.port }}
-          {{- end }}
-          {{- end }}
-          {{- if .Values.orderService.enabled }}
-          {{- range (list "/api/orders" "/api/cart") }}
-          - path: {{ . }}
-            pathType: Prefix
+                  number: {{ .Values.userService.service.port }}
+          - path: /api/orders(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: order-service
                 port:
-                  number: {{ $.Values.orderService.service.port }}
-          {{- end }}
-          {{- end }}
-          {{- if .Values.frontend.enabled }}
+                  number: {{ .Values.orderService.service.port }}
+---
+# Frontend + static files: no rewrite-target (otherwise /assets/*.js becomes / and breaks the SPA).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ps-store.fullname" . }}-web
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "Serves SPA HTML and /assets/* without path rewriting."
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ required "ingress.tls.secretName is required when tls.enabled=true" .Values.ingress.tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
+      http:
+        paths:
           - path: /
             pathType: Prefix
             backend:
@@ -67,5 +81,4 @@ spec:
                 name: frontend
                 port:
                   number: {{ .Values.frontend.service.port }}
-          {{- end }}
 {{- end }}

@@ -1,0 +1,61 @@
+parameters:
+  - name: azureSubscription
+    type: string
+  - name: aksResourceGroup
+    type: string
+  - name: aksClusterName
+    type: string
+  - name: namespace
+    type: string
+    default: ps-store
+  - name: releaseName
+    type: string
+    default: ps-store
+  - name: chartPath
+    type: string
+    default: helm/ps-store
+  - name: valuesFile
+    type: string
+    default: ''
+  - name: acrLoginServer
+    type: string
+  - name: imageTag
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Authenticate to AKS
+    inputs:
+      azureSubscription: ${{ parameters.azureSubscription }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        az aks get-credentials \
+          --resource-group "${{ parameters.aksResourceGroup }}" \
+          --name "${{ parameters.aksClusterName }}" \
+          --overwrite-existing
+
+  - bash: |
+      set -euo pipefail
+      helm version
+
+      values_args=""
+      if [ -n "${{ parameters.valuesFile }}" ]; then
+        values_args="-f ${{ parameters.valuesFile }}"
+      fi
+
+      helm upgrade --install "${{ parameters.releaseName }}" "${{ parameters.chartPath }}" \
+        --namespace "${{ parameters.namespace }}" \
+        --create-namespace \
+        $values_args \
+        --set frontend.image.repository="${{ parameters.acrLoginServer }}/ps-store/frontend" \
+        --set frontend.image.tag="${{ parameters.imageTag }}" \
+        --set gameCatalogService.image.repository="${{ parameters.acrLoginServer }}/ps-store/game-catalog" \
+        --set gameCatalogService.image.tag="${{ parameters.imageTag }}" \
+        --set userService.image.repository="${{ parameters.acrLoginServer }}/ps-store/user-service" \
+        --set userService.image.tag="${{ parameters.imageTag }}" \
+        --set orderService.image.repository="${{ parameters.acrLoginServer }}/ps-store/order-service" \
+        --set orderService.image.tag="${{ parameters.imageTag }}"
+    displayName: Helm upgrade/install
+

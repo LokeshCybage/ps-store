@@ -1,36 +1,49 @@
 {{- if .Values.gameCatalogService.enabled }}
-{{- $c := .Values.gameCatalogService }}
-{{- $name := "game-catalog-service" }}
-{{- if $c.serviceAccount.create }}
+{{- $cfg := toYaml .Values.gameCatalogService.config -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
 automountServiceAccountToken: false
 ---
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: game-catalog-config
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+immutable: true
 data:
-  PORT: {{ $c.service.port | quote }}
-  ORDER_SERVICE_URL: "http://order-service:{{ .Values.orderService.service.port }}"
-  USER_SERVICE_URL: "http://user-service:{{ .Values.userService.service.port }}"
-  OTEL_SERVICE_NAME: {{ $name | quote }}
-  {{- with .Values.global.otel.zipkinEndpoint }}
-  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ . | quote }}
-  {{- end }}
+  PORT: {{ .Values.gameCatalogService.service.port | quote }}
+  ORDER_SERVICE_URL: {{ .Values.gameCatalogService.config.orderServiceUrl | quote }}
+  USER_SERVICE_URL: {{ .Values.gameCatalogService.config.userServiceUrl | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.gameCatalogService.config.otelServiceName | quote }}
+  OTEL_EXPORTER_ZIPKIN_ENDPOINT: {{ .Values.gameCatalogService.config.otelZipkinEndpoint | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+spec:
+  type: {{ .Values.gameCatalogService.service.type }}
+  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.gameCatalogService.service.port }}
+      targetPort: http
+      protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+  annotations:
+    kubernetes.io/description: "FastAPI catalog service backed by Postgres."
+    kubernetes.io/change-cause: "Helm managed rollout"
 spec:
-  replicas: {{ $c.replicaCount }}
+  replicas: {{ .Values.gameCatalogService.replicaCount }}
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -38,86 +51,163 @@ spec:
       maxSurge: 1
       maxUnavailable: 0
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "game-catalog") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 8 }}
+      labels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "game-catalog") | nindent 8 }}
+      annotations:
+        {{- include "ps-store.podAnnotations" (dict "ctx" . "config" $cfg) | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "ps-store.serviceAccountName" (dict "ctx" . "sa" $c.serviceAccount "default" $name) }}
+      serviceAccountName: game-catalog
+      automountServiceAccountToken: false
       {{- include "ps-store.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "game-catalog"
       containers:
-        - name: {{ $name }}
-          image: {{ include "ps-store.image" (dict "ctx" . "img" $c.image) | quote }}
-          imagePullPolicy: {{ $c.image.pullPolicy }}
+        - name: game-catalog
+          image: {{ include "ps-store.image" (dict "ctx" . "img" .Values.gameCatalogService.image) | quote }}
+          imagePullPolicy: {{ .Values.gameCatalogService.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ $c.service.port }}
+              containerPort: {{ .Values.gameCatalogService.service.port }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "gameCatalogService.existingSecret.name is required" .Values.gameCatalogService.existingSecret.name | quote }}
+                  key: {{ .Values.gameCatalogService.existingSecret.databaseUrlKey | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "gameCatalogService.existingSecret.name is required" .Values.gameCatalogService.existingSecret.name | quote }}
+                  key: {{ .Values.gameCatalogService.existingSecret.jwtSecretKey | quote }}
           envFrom:
             - configMapRef:
-                name: game-catalog-config
-            - secretRef:
-                name: game-catalog-secrets
-          {{- with $c.env }}
-          env:
-            {{- toYaml . | nindent 12 }}
+                name: game-catalog
+          {{- with .Values.gameCatalogService.env }}
+          {{- toYaml . | nindent 10 }}
           {{- end }}
-          resources: {{- toYaml $c.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+          resources: {{- toYaml .Values.gameCatalogService.resources | nindent 12 }}
           startupProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 5
-            timeoutSeconds: 2
             failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /health, port: http }
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir: { sizeLimit: 64Mi }
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
-spec:
-  type: {{ $c.service.type }}
-  selector: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 4 }}
-  ports:
-    - name: http
-      port: {{ $c.service.port }}
-      targetPort: http
-{{- if $c.podDisruptionBudget.enabled }}
----
+{{- if .Values.gameCatalogService.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ $name }}
-  labels: {{- include "ps-store.labels" (dict "ctx" . "component" $name) | nindent 4 }}
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
 spec:
-  minAvailable: {{ $c.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.gameCatalogService.podDisruptionBudget.minAvailable }}
   selector:
-    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" $name) | nindent 6 }}
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "game-catalog") | nindent 6 }}
 {{- end }}
+---
+{{- if .Values.gameCatalogService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: game-catalog
+  minReplicas: {{ .Values.gameCatalogService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.gameCatalogService.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.gameCatalogService.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.gameCatalogService.autoscaling.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: game-catalog
+  labels: {{- include "ps-store.labels" (dict "ctx" . "component" "game-catalog") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ps-store.selectorLabels" (dict "ctx" . "component" "game-catalog") | nindent 6 }}
+  policyTypes: ["Ingress","Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["frontend","user-service","order-service"]
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gameCatalogService.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "postgres"
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+              app.kubernetes.io/component: "postgres"
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["user-service","order-service"]
+      ports:
+        - protocol: TCP
+          port: 8002
+        - protocol: TCP
+          port: 8003
 {{- end }}

@@ -1,0 +1,12 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name | quote }}
+  labels:
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce | quote }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurity.warn | quote }}
+    pod-security.kubernetes.io/audit: {{ .Values.namespace.podSecurity.audit | quote }}
+  annotations:
+    kubernetes.io/description: "PlayStation Store microservices namespace"
+{{- end }}

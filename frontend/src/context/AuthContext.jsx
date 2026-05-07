@@ -1,16 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { userApi } from '../api';
+import { decodeToken } from '../utils/token';
 
 const AuthContext = createContext(null);
-
-function decodeToken(token) {
-  try {
-    const payload = token.split('.')[1];
-    return JSON.parse(atob(payload));
-  } catch {
-    return null;
-  }
-}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

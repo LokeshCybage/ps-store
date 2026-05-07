@@ -4,8 +4,7 @@ FROM node:20.18.1-bookworm-slim AS builder
 WORKDIR /build
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+RUN npm ci
 
 COPY index.html vite.config.js ./
 COPY src ./src
@@ -25,7 +24,7 @@ FROM nginx:1.27.4-alpine AS final
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /build/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget -q -O- http://127.0.0.1/ >/dev/null || exit 1
