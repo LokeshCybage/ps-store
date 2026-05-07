@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { userApi } from '../api';
-import { decodeToken } from '../utils/token';
+import { decodeJwtToken } from '../utils/token';
 
 const AuthContext = createContext(null);
 
@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const stored = localStorage.getItem('token');
     if (stored) {
-      const decoded = decodeToken(stored);
+      const decoded = decodeJwtToken(stored);
       if (decoded) {
         setToken(stored);
         setUser(decoded);
@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     const { token: newToken } = res.data;
     localStorage.setItem('token', newToken);
     setToken(newToken);
-    setUser(decodeToken(newToken));
+    setUser(decodeJwtToken(newToken));
     return res.data;
   }, []);
 
@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
     const { token: newToken } = res.data;
     localStorage.setItem('token', newToken);
     setToken(newToken);
-    setUser(decodeToken(newToken));
+    setUser(decodeJwtToken(newToken));
     return res.data;
   }, []);
 
