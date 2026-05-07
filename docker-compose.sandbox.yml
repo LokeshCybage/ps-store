@@ -1,0 +1,15 @@
+services:
+  postgres:
+    cgroup: host
+
+  game-catalog:
+    cgroup: host
+
+  user-service:
+    cgroup: host
+
+  order-service:
+    cgroup: host
+
+  frontend:
+    cgroup: host
