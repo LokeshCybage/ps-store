@@ -25,10 +25,10 @@
           "--connection-string", "postgresql://postgres:postgres@localhost:5432/postgres"
         ]
       },
-        "github": {
-      "url": "https://api.githubcopilot.com/mcp/",
-      "headers": {
-        "Authorization": "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"
-      }
-    }
+    //  "github": {
+    //   "url": "https://api.githubcopilot.com/mcp/",
+    //   "headers": {
+    //     "Authorization": "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"
+    //   }
+    // }
   }
