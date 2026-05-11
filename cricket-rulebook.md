@@ -6,3 +6,4 @@
 4. A batsman is out run out if a fielder breaks the wicket at the appropriate crease with the ball in play while the batsman is out of their ground and no other mode of dismissal applies.
 5. A batsman is out leg before wicket if a legal delivery would have hit the wicket but for striking the batsman's body or protective equipment (not the bat or the glove holding the bat), with the ball pitching in line with the wickets or on the off side and the batsman offering no stroke or missing the ball with the bat.
 6. A batsman is out stumped if the wicket-keeper breaks the wicket at the striker's end with the ball in play while the striker is out of their ground and has not attempted a run, following a delivery that is not a no-ball.
+7. A batsman is out hit wicket if, while playing the ball or setting off for the first run, the striker breaks the wicket with the bat or any part of their clothing or equipment (other than the bat in a normal stroke), with the ball in play.
